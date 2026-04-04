@@ -1,0 +1,27 @@
+export interface Habit {
+  id: string;
+  name: string;
+  color: string;
+  active: boolean;
+  createdAt: string;
+  archivedAt?: string;
+}
+
+export interface Completion {
+  habitId: string;
+  date: string;
+}
+
+export interface AppState {
+  schemaVersion: number;
+  habits: Habit[];
+  completions: Completion[];
+}
+
+export type Action =
+  | { type: 'load'; payload: AppState }
+  | { type: 'addHabit'; payload: { name: string; color: string } }
+  | { type: 'editHabit'; payload: { id: string; name: string } }
+  | { type: 'toggleHabitActive'; payload: { id: string } }
+  | { type: 'addCompletion'; payload: { habitId: string; date: string } }
+  | { type: 'removeCompletion'; payload: { habitId: string; date: string } };
