@@ -2,13 +2,26 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import { loadState, saveState, defaultState } from './lib/storage';
 import type { Action, AppState, Habit, Completion } from './types';
 
+const HABIT_COLOR = '#60a5fa';
+
 const localDateString = (date = new Date()): string => {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 };
 
 const normalizeDate = (value: string): string => {
-  return new Date(value + 'T00:00:00').toISOString().slice(0, 10);
+  const [year, month, day] = value.split('-').map(Number);
+  return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+};
+
+const normalizeCompletions = (completions: Completion[]) => {
+  const seen = new Set<string>();
+  return completions.filter((completion) => {
+    const key = `${completion.habitId}|${normalizeDate(completion.date)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 const reducer = (state: AppState, action: Action): AppState => {
@@ -23,7 +36,7 @@ const reducer = (state: AppState, action: Action): AppState => {
           {
             id,
             name: action.payload.name.trim(),
-            color: action.payload.color,
+            color: HABIT_COLOR,
             active: true,
             createdAt: localDateString(),
           },
@@ -51,11 +64,17 @@ const reducer = (state: AppState, action: Action): AppState => {
             : habit,
         ),
       };
-    case 'addCompletion':
+    case 'addCompletion': {
+      const date = normalizeDate(action.payload.date);
+      const alreadyExists = state.completions.some(
+        (completion) => completion.habitId === action.payload.habitId && completion.date === date,
+      );
+      if (alreadyExists) return state;
       return {
         ...state,
-        completions: [...state.completions, { habitId: action.payload.habitId, date: normalizeDate(action.payload.date) }],
+        completions: [...state.completions, { habitId: action.payload.habitId, date }],
       };
+    }
     case 'removeCompletion':
       return {
         ...state,
@@ -79,7 +98,7 @@ const groupByDate = (completions: Completion[]) => {
 const getPreviousDate = (dateString: string): string => {
   const date = new Date(`${dateString}T00:00:00`);
   date.setDate(date.getDate() - 1);
-  return normalizeDate(date.toISOString().slice(0, 10));
+  return localDateString(date);
 };
 
 const getYearDays = (year: number) => {
@@ -102,31 +121,43 @@ const getStreak = (habitId: string, completionSet: Set<string>) => {
   return streak;
 };
 
-const buildYearSummaries = (years: number[], completionMap: Record<string, Completion[]>) => {
+const getDayBackground = (count: number, total: number) => {
+  if (count === 0) return 'rgba(226, 232, 255, 0.18)';
+  const progress = Math.min(count / Math.max(total, 1), 1);
+  const alpha = 0.25 + progress * 0.55;
+  return `rgba(96, 165, 250, ${alpha.toFixed(2)})`;
+};
+
+const buildYearSummaries = (
+  years: number[],
+  completionMap: Record<string, Completion[]>,
+  habitsById: Record<string, Habit | undefined>,
+  activeHabitCount: number,
+) => {
   return years.map((year) => {
     const days = getYearDays(year);
     return {
       year,
-      days: days.map((day) => ({
-        day,
-        count: completionMap[day]?.length ?? 0,
-      })),
+      days: days.map((day) => {
+        const dayCompletions = completionMap[day] ?? [];
+        const uniqueHabitIds = Array.from(new Set(dayCompletions.map((item) => item.habitId)));
+        const activeCompletedCount = new Set(
+          dayCompletions.filter((item) => habitsById[item.habitId]?.active).map((item) => item.habitId),
+        ).size;
+        const allComplete = activeHabitCount > 0 && activeCompletedCount >= activeHabitCount;
+        return {
+          day,
+          count: uniqueHabitIds.length,
+          allComplete,
+        };
+      }),
     };
   });
-};
-
-const getColorShade = (count: number) => {
-  if (count === 0) return 'rgba(255,255,255,0.04)';
-  if (count === 1) return 'rgba(96,165,250,0.28)';
-  if (count === 2) return 'rgba(96,165,250,0.42)';
-  if (count === 3) return 'rgba(96,165,250,0.6)';
-  return 'rgba(96,165,250,0.82)';
 };
 
 function App() {
   const [state, dispatch] = useReducer(reducer, defaultState);
   const [habitName, setHabitName] = useState('');
-  const [habitColor, setHabitColor] = useState('#60a5fa');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -141,10 +172,18 @@ function App() {
 
   const today = localDateString();
   const completionSet = useMemo(() => {
-    return new Set(state.completions.map((item) => `${item.habitId}|${normalizeDate(item.date)}`));
+    return new Set(normalizeCompletions(state.completions).map((item) => `${item.habitId}|${normalizeDate(item.date)}`));
   }, [state.completions]);
 
-  const completionsByDate = useMemo(() => groupByDate(state.completions), [state.completions]);
+  const completionsByDate = useMemo(
+    () => groupByDate(normalizeCompletions(state.completions)),
+    [state.completions],
+  );
+
+  const habitsById = useMemo(
+    () => Object.fromEntries(state.habits.map((habit) => [habit.id, habit] as const)),
+    [state.habits],
+  );
 
   const activeHabits = useMemo(() => state.habits.filter((habit) => habit.active), [state.habits]);
   const totalCompletedToday = useMemo(
@@ -163,7 +202,10 @@ function App() {
     return Array.from(years).sort((a, b) => b - a);
   }, [state.completions]);
 
-  const yearSummary = useMemo(() => buildYearSummaries(legacyYears, completionsByDate), [legacyYears, completionsByDate]);
+  const yearSummary = useMemo(
+    () => buildYearSummaries(legacyYears, completionsByDate, habitsById, activeHabits.length),
+    [legacyYears, completionsByDate, habitsById, activeHabits.length],
+  );
 
   const stats = useMemo(() => {
     const totalCompletions = state.completions.length;
@@ -192,7 +234,7 @@ function App() {
   const handleAddHabit = () => {
     const name = habitName.trim();
     if (!name) return;
-    dispatch({ type: 'addHabit', payload: { name, color: habitColor } });
+    dispatch({ type: 'addHabit', payload: { name } });
     setHabitName('');
   };
 
@@ -205,7 +247,9 @@ function App() {
     }
   };
 
-  const selectedDayItems = selectedDay ? completionsByDate[selectedDay] ?? [] : [];
+  const selectedDayItems = selectedDay
+    ? Array.from(new Map((completionsByDate[selectedDay] ?? []).map((item) => [item.habitId, item])).values())
+    : [];
 
   return (
     <div className="app-shell">
@@ -213,7 +257,7 @@ function App() {
         <div>
           <h1>Habit Tracker</h1>
           <p style={{ opacity: 0.78, marginTop: 8, maxWidth: 540 }}>
-            Create daily habits, mark completion for today, track streaks, and explore your yearly performance with persistent browser storage.
+            Add daily habits, mark your day done, track streaks, and review yearly performance.
           </p>
         </div>
       </header>
@@ -225,13 +269,6 @@ function App() {
             onChange={(event) => setHabitName(event.target.value)}
             placeholder="Add a new habit"
             aria-label="New habit name"
-          />
-          <input
-            type="color"
-            value={habitColor}
-            onChange={(event) => setHabitColor(event.target.value)}
-            aria-label="Habit color"
-            style={{ padding: 0, height: '100%', width: '100%' }}
           />
           <button type="button" onClick={handleAddHabit}>
             Add
@@ -327,9 +364,18 @@ function App() {
                     key={day.day}
                     type="button"
                     className="day-cell"
-                    style={{ background: getColorShade(day.count) }}
+                    style={{
+                      background: getDayBackground(day.count, activeHabits.length),
+                      boxShadow: day.allComplete
+                        ? `0 0 0 2px rgba(96, 165, 250, 0.4), 0 0 15px rgba(96, 165, 250, 0.22)`
+                        : day.day === today
+                        ? '0 0 0 0.5px rgba(14, 165, 233, 0.55), 0 0 12px rgba(14, 165, 233, 0.16)'
+                        : undefined,
+                      borderColor: day.day === today ? '#0ea5e9' : 'rgba(148, 163, 184, 0.24)',
+                    }}
                     onClick={() => setSelectedDay(day.day)}
-                    aria-label={`Day ${day.day}, ${day.count} completions`}
+                    aria-label={`${day.day}, ${day.count} completed habit${day.count !== 1 ? 's' : ''}`}
+                    title={`${day.day} — ${day.count} completed habit${day.count !== 1 ? 's' : ''}`}
                   >
                     <span />
                   </button>
@@ -351,8 +397,8 @@ function App() {
             </div>
             <p style={{ opacity: 0.78, marginTop: '0.75rem' }}>
               {selectedDayItems.length > 0
-                ? `${selectedDayItems.length} habit${selectedDayItems.length > 1 ? 's' : ''} completed.`
-                : 'No habits were marked complete on this day.'}
+                ? `${selectedDayItems.length} habit${selectedDayItems.length !== 1 ? 's' : ''} completed.`
+                : 'No completed habits on this day.'}
             </p>
             <ul className="modal-list">
               {selectedDayItems.length > 0 ? (

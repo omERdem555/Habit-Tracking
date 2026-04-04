@@ -40,4 +40,13 @@ A React + TypeScript habit tracking MVP built with Vite.
    http://localhost/Habit-Tracking/
    ```
 
-Bu dizinde `index.php` dosyası `dist/index.html` sayfasına yönlendirme yapar.
+## Deploy to Vercel
+
+1. Push the project to GitHub.
+2. Connect your GitHub repo to Vercel.
+3. Vercel will automatically detect the build settings:
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+4. Deploy and get a global URL.
+
+Note: Data is stored in browser LocalStorage, so each user has their own data.

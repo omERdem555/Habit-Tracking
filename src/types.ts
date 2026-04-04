@@ -20,7 +20,7 @@ export interface AppState {
 
 export type Action =
   | { type: 'load'; payload: AppState }
-  | { type: 'addHabit'; payload: { name: string; color: string } }
+  | { type: 'addHabit'; payload: { name: string } }
   | { type: 'editHabit'; payload: { id: string; name: string } }
   | { type: 'toggleHabitActive'; payload: { id: string } }
   | { type: 'addCompletion'; payload: { habitId: string; date: string } }
