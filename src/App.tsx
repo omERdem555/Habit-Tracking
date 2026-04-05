@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { loadState, saveState, defaultState } from './lib/storage';
 import type { Action, AppState, Habit, Completion } from './types';
 
@@ -156,11 +157,13 @@ const buildYearSummaries = (
 };
 
 function App() {
+  const { t, i18n } = useTranslation();
   const [state, dispatch] = useReducer(reducer, defaultState);
   const [habitName, setHabitName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
     dispatch({ type: 'load', payload: loadState() });
@@ -169,6 +172,11 @@ function App() {
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    document.body.setAttribute('data-theme', theme);
+  }, [theme]);
 
   const today = localDateString();
   const completionSet = useMemo(() => {
@@ -247,17 +255,37 @@ function App() {
     }
   };
 
-  const selectedDayItems = selectedDay
-    ? Array.from(new Map((completionsByDate[selectedDay] ?? []).map((item) => [item.habitId, item])).values())
-    : [];
+  const toggleTheme = () => {
+    setTheme(theme === 'light' ? 'dark' : 'light');
+  };
 
   return (
     <div className="app-shell">
+      <nav className="navbar">
+        <div className="navbar-content">
+          <h1 style={{ opacity: 0.9 }}>{t('title')}</h1>
+          <div className="navbar-buttons">
+            <button
+              type="button"
+              className="theme-button"
+              onClick={toggleTheme}
+            >
+              {theme === 'light' ? t('dark') : t('light')}
+            </button>
+            <button
+              type="button"
+              className="lang-button"
+              onClick={() => i18n.changeLanguage(i18n.language === 'en' ? 'tr' : 'en')}
+            >
+              {i18n.language === 'en' ? 'TR' : 'ENG'}
+            </button>
+          </div>
+        </div>
+      </nav>
       <header>
         <div>
-          <h1>Habit Tracker</h1>
-          <p style={{ opacity: 0.78, marginTop: 8, maxWidth: 540 }}>
-            Add daily habits, mark your day done, track streaks, and review yearly performance.
+          <p style={{ opacity: 0.9, marginTop: 8, maxWidth: 540, color: 'var(--text-secondary)' }}>
+            {t('subtitle')}
           </p>
         </div>
       </header>
@@ -267,37 +295,37 @@ function App() {
           <input
             value={habitName}
             onChange={(event) => setHabitName(event.target.value)}
-            placeholder="Add a new habit"
+            placeholder={t('addHabitPlaceholder')}
             aria-label="New habit name"
           />
           <button type="button" onClick={handleAddHabit}>
-            Add
+            {t('addButton')}
           </button>
         </div>
       </section>
 
       <section className="card habit-summary">
         <div className="summary-card">
-          <h3>Active habits</h3>
+          <h3>{t('activeHabits')}</h3>
           <p>{activeHabits.length}</p>
         </div>
         <div className="summary-card">
-          <h3>Completed today</h3>
+          <h3>{t('completedToday')}</h3>
           <p>{totalCompletedToday}</p>
         </div>
         <div className="summary-card">
-          <h3>Longest streak</h3>
+          <h3>{t('longestStreak')}</h3>
           <p>{stats.longestStreak}</p>
         </div>
         <div className="summary-card">
-          <h3>Total completions</h3>
+          <h3>{t('totalCompletions')}</h3>
           <p>{stats.totalCompletions}</p>
         </div>
       </section>
 
       {yearSummary.length > 0 && (
         <section className="card calendar-grid">
-          <h2>Calendar performance</h2>
+          <h2 style={{ opacity: 0.85 }}>{t('calendarPerformance')}</h2>
           {yearSummary.map((yearRow) => (
             <div key={yearRow.year} className="year-row">
               <div className="day-label">{yearRow.year}</div>
@@ -330,10 +358,10 @@ function App() {
       )}
 
       <section className="habits card">
-        <h2>Habits</h2>
+        <h2 style={{ opacity: 0.85 }}>{t('habits')}</h2>
         <div className="habit-list">
           {state.habits.length === 0 ? (
-            <p style={{ opacity: 0.75 }}>No habits yet. Add one to begin tracking.</p>
+            <p style={{ opacity: 0.9, color: 'var(--text-secondary)' }}>{t('noHabits')}</p>
           ) : (
             state.habits.map((habit) => {
               const completedToday = completionSet.has(`${habit.id}|${today}`);
@@ -345,12 +373,12 @@ function App() {
                     <div className="habit-label">
                       <span className="habit-color" style={{ background: habit.color }} />
                       <strong>{habit.name}</strong>
-                      {!habit.active && <span style={{ opacity: 0.6 }}>Archived</span>}
+                      {!habit.active && <span style={{ opacity: 0.6 }}>{t('archived')}</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                      <span style={{ opacity: 0.8 }}>Streak: {streak}</span>
-                      <span style={{ opacity: 0.8 }}>Total: {total}</span>
-                      <span style={{ opacity: 0.8 }}>Last: {state.completions
+                      <span style={{ opacity: 0.8 }}>{t('streak')}: {streak}</span>
+                      <span style={{ opacity: 0.8 }}>{t('total')}: {total}</span>
+                      <span style={{ opacity: 0.8 }}>{t('last')}: {state.completions
                         .filter((item) => item.habitId === habit.id)
                         .map((item) => item.date)
                         .sort()
@@ -364,7 +392,7 @@ function App() {
                       disabled={!habit.active}
                       onClick={() => handleToggleToday(habit)}
                     >
-                      {completedToday ? 'Undo' : 'Mark'}
+                      {completedToday ? t('undo') : t('mark')}
                     </button>
                     <button
                       type="button"
@@ -373,10 +401,10 @@ function App() {
                         setEditingName(habit.name);
                       }}
                     >
-                      Rename
+                      {t('rename')}
                     </button>
                     <button type="button" onClick={() => dispatch({ type: 'toggleHabitActive', payload: { id: habit.id } })}>
-                      {habit.active ? 'Archive' : 'Activate'}
+                      {habit.active ? t('archive') : t('activate')}
                     </button>
                   </div>
                 </div>
@@ -390,15 +418,15 @@ function App() {
         <div className="modal-backdrop" onClick={() => setSelectedDay(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h3>{selectedDay} summary</h3>
+              <h3 style={{ opacity: 0.9 }}>{selectedDay} {t('summary')}</h3>
               <button type="button" onClick={() => setSelectedDay(null)}>
-                Close
+                {t('close')}
               </button>
             </div>
             <p style={{ opacity: 0.78, marginTop: '0.75rem' }}>
               {selectedDayItems.length > 0
-                ? `${selectedDayItems.length} habit${selectedDayItems.length !== 1 ? 's' : ''} completed.`
-                : 'No completed habits on this day.'}
+                ? `${selectedDayItems.length} ${selectedDayItems.length !== 1 ? t('habitsCompleted') : t('habitCompleted')}`
+                : t('noCompletedHabitsOnDay')}
             </p>
             <ul className="modal-list">
               {selectedDayItems.length > 0 ? (
@@ -407,13 +435,13 @@ function App() {
                   return (
                     <li key={`${item.habitId}-${item.date}`}>
                       <span>
-                        <strong style={{ color: habit?.color ?? '#fff' }}>{habit?.name ?? 'Unknown habit'}</strong>
+                        <strong style={{ color: habit?.color ?? '#fff' }}>{habit?.name ?? t('unknownHabit')}</strong>
                       </span>
                     </li>
                   );
                 })
               ) : (
-                <li style={{ opacity: 0.75 }}>No completed habits.</li>
+                <li style={{ opacity: 0.75 }}>{t('noCompletedHabits')}</li>
               )}
             </ul>
           </div>
@@ -424,9 +452,9 @@ function App() {
         <div className="modal-backdrop" onClick={() => setEditingId(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h3>Rename habit</h3>
+              <h3 style={{ opacity: 0.9 }}>{t('renameHabit')}</h3>
               <button type="button" onClick={() => setEditingId(null)}>
-                Close
+                {t('close')}
               </button>
             </div>
             <div style={{ marginTop: '1rem' }}>
@@ -434,7 +462,7 @@ function App() {
                 value={editingName}
                 onChange={(event) => setEditingName(event.target.value)}
                 style={{ width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(16,20,33,0.9)', color: '#f5f7fb' }}
-                placeholder="Habit name"
+                placeholder={t('habitNamePlaceholder')}
               />
               <button
                 type="button"
@@ -446,7 +474,7 @@ function App() {
                   }
                 }}
               >
-                Save
+                {t('save')}
               </button>
             </div>
           </div>
