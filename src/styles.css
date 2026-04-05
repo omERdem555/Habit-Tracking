@@ -55,9 +55,12 @@ body {
 }
 
 button,
-input {
+input,
+textarea,
+select {
   font: inherit;
   color: var(--text-primary);
+  background: var(--input-bg);
 }
 
 button {
@@ -140,9 +143,14 @@ header h1 {
 
 .form-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px;
   gap: 0.75rem;
-  align-items: end;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .form-row input,
@@ -209,6 +217,16 @@ header h1 {
   display: grid;
   grid-template-columns: repeat(3, auto);
   gap: 0.5rem;
+}
+
+.color-input {
+  width: 3.5rem;
+  height: 3.5rem;
+  padding: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: transparent;
+  cursor: pointer;
 }
 
 .habit-actions button,

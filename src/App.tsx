@@ -37,7 +37,7 @@ const reducer = (state: AppState, action: Action): AppState => {
           {
             id,
             name: action.payload.name.trim(),
-            color: HABIT_COLOR,
+            color: action.payload.color,
             active: true,
             createdAt: localDateString(),
           },
@@ -160,6 +160,7 @@ function App() {
   const { t, i18n } = useTranslation();
   const [state, dispatch] = useReducer(reducer, defaultState);
   const [habitName, setHabitName] = useState('');
+  const [habitColor, setHabitColor] = useState(HABIT_COLOR);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -290,8 +291,9 @@ function App() {
   const handleAddHabit = () => {
     const name = habitName.trim();
     if (!name) return;
-    dispatch({ type: 'addHabit', payload: { name } });
+    dispatch({ type: 'addHabit', payload: { name, color: habitColor } });
     setHabitName('');
+    setHabitColor(HABIT_COLOR);
   };
 
   const handleSaveCompletion = () => {
@@ -320,7 +322,7 @@ function App() {
     padding: '0.95rem 1rem',
     borderRadius: '14px',
     border: '1px solid rgba(148, 163, 184, 0.4)',
-    background: theme === 'dark' ? 'rgba(16,20,33,0.9)' : 'rgba(255, 255, 255, 0.94)',
+    background: 'var(--input-bg)',
     color: 'var(--text-primary)',
   };
 
@@ -376,11 +378,20 @@ function App() {
             value={habitName}
             onChange={(event) => setHabitName(event.target.value)}
             placeholder={t('addHabitPlaceholder')}
-            aria-label="New habit name"
+            aria-label={t('habitNamePlaceholder')}
           />
-          <button type="button" onClick={handleAddHabit}>
-            {t('addButton')}
-          </button>
+          <div className="form-actions">
+            <button type="button" onClick={handleAddHabit}>
+              {t('addButton')}
+            </button>
+            <input
+              type="color"
+              className="color-input"
+              value={habitColor}
+              onChange={(event) => setHabitColor(event.target.value)}
+              aria-label={t('habitColor')}
+            />
+          </div>
         </div>
       </section>
 
@@ -583,7 +594,7 @@ function App() {
               <input
                 value={editingName}
                 onChange={(event) => setEditingName(event.target.value)}
-                style={{ width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(16,20,33,0.9)', color: 'var(--text-primary)' }}
+                style={{ width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid rgba(148, 163, 184, 0.4)', background: 'var(--input-bg)', color: 'var(--text-primary)' }}
                 placeholder={t('habitNamePlaceholder')}
               />
               <button
