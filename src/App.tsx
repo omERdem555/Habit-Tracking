@@ -73,7 +73,7 @@ const reducer = (state: AppState, action: Action): AppState => {
       if (alreadyExists) return state;
       return {
         ...state,
-        completions: [...state.completions, { habitId: action.payload.habitId, date }],
+        completions: [...state.completions, { habitId: action.payload.habitId, date, hours: action.payload.hours, note: action.payload.note }],
       };
     }
     case 'removeCompletion':
@@ -163,6 +163,10 @@ function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [completionModal, setCompletionModal] = useState<{ habitId: string; date: string } | null>(null);
+  const [completionHours, setCompletionHours] = useState('');
+  const [completionNote, setCompletionNote] = useState('');
+  const [expandedCompletions, setExpandedCompletions] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
@@ -236,8 +240,52 @@ function App() {
       }
       return Math.max(best, maxStreak);
     }, 0);
-    return { totalCompletions, longestStreak };
+
+    // Weekly and monthly totals for each habit
+    const habitStats = state.habits.map(habit => {
+      const completions = state.completions.filter(c => c.habitId === habit.id);
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+      const currentWeek = Math.floor((now.getDate() - now.getDay() + 1) / 7) + 1;
+
+      const monthlyHours = completions
+        .filter(c => {
+          const date = new Date(c.date);
+          return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
+        })
+        .reduce((sum, c) => sum + (c.hours || 0), 0);
+
+      const weeklyHours = completions
+        .filter(c => {
+          const date = new Date(c.date);
+          const week = Math.floor((date.getDate() - date.getDay() + 1) / 7) + 1;
+          return date.getFullYear() === currentYear && date.getMonth() === currentMonth && week === currentWeek;
+        })
+        .reduce((sum, c) => sum + (c.hours || 0), 0);
+
+      return {
+        habitId: habit.id,
+        monthlyHours,
+        weeklyHours
+      };
+    });
+
+    return { totalCompletions, longestStreak, habitStats };
   }, [state.completions, state.habits]);
+
+  const selectedDayItems = useMemo(
+    () =>
+      selectedDay
+        ? Array.from(new Map((completionsByDate[selectedDay] ?? []).map((item) => [item.habitId, item])).values())
+        : [],
+    [selectedDay, completionsByDate],
+  );
+
+  const monthFormatter = useMemo(
+    () => new Intl.DateTimeFormat(i18n.language === 'tr' ? 'tr' : 'en', { month: 'long' }),
+    [i18n.language],
+  );
 
   const handleAddHabit = () => {
     const name = habitName.trim();
@@ -246,12 +294,44 @@ function App() {
     setHabitName('');
   };
 
+  const handleSaveCompletion = () => {
+    if (completionModal) {
+      const hours = completionHours ? parseFloat(completionHours) : undefined;
+      dispatch({ type: 'addCompletion', payload: { habitId: completionModal.habitId, date: completionModal.date, hours, note: completionNote || undefined } });
+      setCompletionModal(null);
+    }
+  };
+
+  const toggleCompletionDetails = (habitId: string, date: string) => {
+    const key = `${habitId}-${date}`;
+    setExpandedCompletions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  const completionFieldStyle = {
+    width: '100%',
+    padding: '0.95rem 1rem',
+    borderRadius: '14px',
+    border: '1px solid rgba(148, 163, 184, 0.4)',
+    background: theme === 'dark' ? 'rgba(16,20,33,0.9)' : 'rgba(255, 255, 255, 0.94)',
+    color: 'var(--text-primary)',
+  };
+
   const handleToggleToday = (habit: Habit) => {
     const exists = completionSet.has(`${habit.id}|${today}`);
     if (exists) {
       dispatch({ type: 'removeCompletion', payload: { habitId: habit.id, date: today } });
     } else {
-      dispatch({ type: 'addCompletion', payload: { habitId: habit.id, date: today } });
+      setCompletionModal({ habitId: habit.id, date: today });
+      setCompletionHours('');
+      setCompletionNote('');
     }
   };
 
@@ -383,6 +463,8 @@ function App() {
                         .map((item) => item.date)
                         .sort()
                         .pop() ?? '—'}</span>
+                      <span style={{ opacity: 0.8 }}>{t('month')}: {stats.habitStats.find(s => s.habitId === habit.id)?.monthlyHours || 0}h</span>
+                      <span style={{ opacity: 0.8 }}>{t('week')}: {stats.habitStats.find(s => s.habitId === habit.id)?.weeklyHours || 0}h</span>
                     </div>
                   </div>
                   <div className="habit-actions">
@@ -414,14 +496,38 @@ function App() {
         </div>
       </section>
 
+      <section className="card details-section">
+        <h2>{t('details')}</h2>
+        <div className="details-content">
+          {Array.from({ length: 12 }, (_, i) => {
+            const month = monthFormatter.format(new Date(2020, i, 1));
+            const monthData = state.habits.map(habit => {
+              const completions = state.completions.filter(c => {
+                const date = new Date(c.date);
+                return c.habitId === habit.id && date.getMonth() === i;
+              });
+              const totalHours = completions.reduce((sum, c) => sum + (c.hours || 0), 0);
+              return { habit: habit.name, hours: totalHours };
+            }).filter(d => d.hours > 0);
+            return monthData.length > 0 ? (
+              <div key={i} className="month-details">
+                <h3>{month}</h3>
+                <ul>
+                  {monthData.map((d, idx) => (
+                    <li key={idx}>{d.habit}: {d.hours}h</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null;
+          })}
+        </div>
+      </section>
+
       {selectedDay && (
         <div className="modal-backdrop" onClick={() => setSelectedDay(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h3 style={{ opacity: 0.9 }}>{selectedDay} {t('summary')}</h3>
-              <button type="button" onClick={() => setSelectedDay(null)}>
-                {t('close')}
-              </button>
             </div>
             <p style={{ opacity: 0.78, marginTop: '0.75rem' }}>
               {selectedDayItems.length > 0
@@ -432,11 +538,27 @@ function App() {
               {selectedDayItems.length > 0 ? (
                 selectedDayItems.map((item) => {
                   const habit = state.habits.find((habitItem) => habitItem.id === item.habitId);
+                  const isExpanded = expandedCompletions.has(`${item.habitId}-${selectedDay}`);
                   return (
                     <li key={`${item.habitId}-${item.date}`}>
-                      <span>
-                        <strong style={{ color: habit?.color ?? '#fff' }}>{habit?.name ?? t('unknownHabit')}</strong>
-                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>
+                          <strong>{habit?.name ?? t('unknownHabit')}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleCompletionDetails(item.habitId, selectedDay!)}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '1.2rem' }}
+                        >
+                          {isExpanded ? '−' : '+'}
+                        </button>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ marginTop: '0.5rem', padding: '0.75rem', background: theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)', borderRadius: '12px' }}>
+                          {item.hours !== undefined && <p><strong>{t('hoursSpent')}:</strong> {item.hours}h</p>}
+                          {item.note && <p><strong>{t('noteOptional')}:</strong> {item.note}</p>}
+                        </div>
+                      )}
                     </li>
                   );
                 })
@@ -461,18 +583,72 @@ function App() {
               <input
                 value={editingName}
                 onChange={(event) => setEditingName(event.target.value)}
-                style={{ width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(16,20,33,0.9)', color: '#f5f7fb' }}
+                style={{ width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(16,20,33,0.9)', color: 'var(--text-primary)' }}
                 placeholder={t('habitNamePlaceholder')}
               />
               <button
                 type="button"
-                style={{ marginTop: '1rem', width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: 'none', background: 'rgba(96,165,250,0.18)', color: '#e2e8f0' }}
+                style={{ marginTop: '1rem', width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid var(--button-border)', background: 'var(--button-bg)', color: 'var(--button-text)' }}
                 onClick={() => {
                   if (editingName.trim()) {
                     dispatch({ type: 'editHabit', payload: { id: editingId, name: editingName } });
                     setEditingId(null);
                   }
                 }}
+              >
+                {t('save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {completionModal && (
+        <div className="modal-backdrop" onClick={() => setCompletionModal(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ opacity: 0.9 }}>{t('mark')} {state.habits.find(h => h.id === completionModal.habitId)?.name}</h3>
+              <button type="button" onClick={() => setCompletionModal(null)}>
+                {t('close')}
+              </button>
+            </div>
+            <div style={{ marginTop: '1rem' }}>
+              <input
+                type="number"
+                min={0}
+                max={24}
+                step={0.1}
+                value={completionHours}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === '') {
+                    setCompletionHours('');
+                    return;
+                  }
+                  const parsed = Number(value);
+                  if (Number.isNaN(parsed)) return;
+                  if (parsed < 0) {
+                    setCompletionHours('0');
+                  } else if (parsed > 24) {
+                    setCompletionHours('24');
+                  } else {
+                    setCompletionHours(value);
+                  }
+                }}
+                style={{ ...completionFieldStyle, marginBottom: '1rem', color: 'var(--text-primary)' }}
+                placeholder={t('hoursSpent')}
+              />
+              <textarea
+                value={completionNote}
+                onChange={(event) => setCompletionNote(event.target.value)}
+                style={{ ...completionFieldStyle, marginBottom: '1rem', resize: 'vertical', minHeight: '96px', color: 'var(--text-primary)' }}
+                placeholder={t('noteOptional')}
+                rows={3}
+              />
+              <button
+                type="button"
+                style={{ width: '100%', padding: '0.95rem 1rem', borderRadius: '14px', border: '1px solid var(--button-border)', background: 'var(--button-bg)', color: 'var(--button-text)' }}
+                onClick={handleSaveCompletion}
               >
                 {t('save')}
               </button>

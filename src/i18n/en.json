@@ -30,6 +30,11 @@
     "habitNamePlaceholder": "Habit name",
     "save": "Save",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "hoursSpent": "Hours spent (optional)",
+    "noteOptional": "Note (optional)",
+    "month": "Month",
+    "week": "Week",
+    "details": "Details"
   }
 }

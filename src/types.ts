@@ -10,6 +10,8 @@ export interface Habit {
 export interface Completion {
   habitId: string;
   date: string;
+  hours?: number;
+  note?: string;
 }
 
 export interface AppState {
@@ -23,5 +25,5 @@ export type Action =
   | { type: 'addHabit'; payload: { name: string } }
   | { type: 'editHabit'; payload: { id: string; name: string } }
   | { type: 'toggleHabitActive'; payload: { id: string } }
-  | { type: 'addCompletion'; payload: { habitId: string; date: string } }
+  | { type: 'addCompletion'; payload: { habitId: string; date: string; hours?: number; note?: string } }
   | { type: 'removeCompletion'; payload: { habitId: string; date: string } };
