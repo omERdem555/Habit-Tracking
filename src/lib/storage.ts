@@ -11,7 +11,9 @@ export const defaultState: AppState = {
 
 const normalizeDate = (value: string): string => {
   const [year, month, day] = value.split('-').map(Number);
-  return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+  return `${year.toString().padStart(4, '0')}-${month
+    .toString()
+    .padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
 };
 
 const normalizeCompletions = (completions: unknown[]): Completion[] => {
@@ -19,14 +21,33 @@ const normalizeCompletions = (completions: unknown[]): Completion[] => {
   const result: Completion[] = [];
 
   completions.forEach((item) => {
+    // 🔒 Type guard
     if (typeof item !== 'object' || item === null) return;
-    const completion = item as { habitId?: string; date?: string };
-    if (!completion.habitId || !completion.date) return;
+
+    const completion = item as Partial<Completion>;
+
+    if (typeof completion.habitId !== 'string') return;
+    if (typeof completion.date !== 'string') return;
+
     const date = normalizeDate(completion.date);
     const key = `${completion.habitId}|${date}`;
+
+    // 🔒 Duplicate engelleme
     if (seen.has(key)) return;
     seen.add(key);
-    result.push({ habitId: completion.habitId, date });
+
+    result.push({
+      habitId: completion.habitId,
+      date,
+      hours:
+        typeof completion.hours === 'number' && !Number.isNaN(completion.hours)
+          ? completion.hours
+          : undefined,
+      note:
+        typeof completion.note === 'string' && completion.note.trim().length > 0
+          ? completion.note
+          : undefined,
+    });
   });
 
   return result;
@@ -42,6 +63,8 @@ export function loadState(): AppState {
     if (!raw) return defaultState;
 
     const parsed = JSON.parse(raw) as AppState;
+
+    // 🔒 Schema kontrolü
     if (!parsed || parsed.schemaVersion !== CURRENT_SCHEMA) {
       return defaultState;
     }
@@ -49,7 +72,9 @@ export function loadState(): AppState {
     return {
       schemaVersion: CURRENT_SCHEMA,
       habits: Array.isArray(parsed.habits) ? parsed.habits : [],
-      completions: Array.isArray(parsed.completions) ? normalizeCompletions(parsed.completions) : [],
+      completions: Array.isArray(parsed.completions)
+        ? normalizeCompletions(parsed.completions)
+        : [],
     };
   } catch {
     return defaultState;
@@ -58,5 +83,10 @@ export function loadState(): AppState {
 
 export function saveState(state: AppState): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // silent fail (quota vs.)
+  }
 }
