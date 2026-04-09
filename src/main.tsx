@@ -10,10 +10,15 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>,
 );
 
-if ('serviceWorker' in navigator) {
+const SW_CLEANUP_FLAG = 'sw-cleanup-done';
+
+if ('serviceWorker' in navigator && !localStorage.getItem(SW_CLEANUP_FLAG)) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      registrations.forEach((registration) => registration.unregister());
-    });
+    navigator.serviceWorker
+      .register('/service-worker.js')
+      .then(() => {
+        localStorage.setItem(SW_CLEANUP_FLAG, '1');
+      })
+      .catch(() => {});
   });
 }
