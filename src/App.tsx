@@ -16,13 +16,10 @@ const normalizeDate = (value: string): string => {
 };
 
 const normalizeCompletions = (completions: Completion[]) => {
-  const seen = new Set<string>();
-  return completions.filter((completion) => {
-    const key = `${completion.habitId}|${normalizeDate(completion.date)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return completions.map((completion) => ({
+    ...completion,
+    date: normalizeDate(completion.date),
+  }));
 };
 
 const reducer = (state: AppState, action: Action): AppState => {
@@ -67,20 +64,29 @@ const reducer = (state: AppState, action: Action): AppState => {
       };
     case 'addCompletion': {
       const date = normalizeDate(action.payload.date);
-      const alreadyExists = state.completions.some(
-        (completion) => completion.habitId === action.payload.habitId && completion.date === date,
-      );
-      if (alreadyExists) return state;
+      const id =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
       return {
         ...state,
-        completions: [...state.completions, { habitId: action.payload.habitId, date, hours: action.payload.hours, note: action.payload.note }],
+        completions: [
+          ...state.completions,
+          {
+            id,
+            habitId: action.payload.habitId,
+            date,
+            hours: action.payload.hours,
+            note: action.payload.note,
+          },
+        ],
       };
     }
     case 'removeCompletion':
       return {
         ...state,
         completions: state.completions.filter(
-          (completion) => !(completion.habitId === action.payload.habitId && completion.date === normalizeDate(action.payload.date)),
+          (completion) => completion.id !== action.payload.completionId,
         ),
       };
     default:
@@ -167,6 +173,7 @@ function App() {
   const [completionModal, setCompletionModal] = useState<{ habitId: string; date: string } | null>(null);
   const [completionHours, setCompletionHours] = useState('');
   const [completionNote, setCompletionNote] = useState('');
+  const [undoModal, setUndoModal] = useState<{ habitId: string; date: string } | null>(null);
   const [expandedCompletions, setExpandedCompletions] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
 
@@ -185,7 +192,7 @@ function App() {
 
   const today = localDateString();
   const completionSet = useMemo(() => {
-    return new Set(normalizeCompletions(state.completions).map((item) => `${item.habitId}|${normalizeDate(item.date)}`));
+    return new Set(normalizeCompletions(state.completions).map((item) => `${item.habitId}|${item.date}`));
   }, [state.completions]);
 
   const completionsByDate = useMemo(
@@ -275,13 +282,39 @@ function App() {
     return { totalCompletions, longestStreak, habitStats };
   }, [state.completions, state.habits]);
 
-  const selectedDayItems = useMemo(
-    () =>
-      selectedDay
-        ? Array.from(new Map((completionsByDate[selectedDay] ?? []).map((item) => [item.habitId, item])).values())
-        : [],
-    [selectedDay, completionsByDate],
-  );
+  const selectedDayItems = useMemo(() => {
+    if (!selectedDay) return [];
+    const items = completionsByDate[selectedDay] ?? [];
+    const grouped = items.reduce<Record<string, Completion[]>>((acc, item) => {
+      if (!acc[item.habitId]) {
+        acc[item.habitId] = [];
+      }
+      acc[item.habitId].push(item);
+      return acc;
+    }, {});
+    return Object.entries(grouped).map(([habitId, entries]) => ({ habitId, entries }));
+  }, [selectedDay, completionsByDate]);
+
+  useEffect(() => {
+    if (!selectedDay) return;
+    setExpandedCompletions(
+      new Set(selectedDayItems.map((item) => `${item.habitId}-${selectedDay}`)),
+    );
+  }, [selectedDay, selectedDayItems]);
+
+  const undoCompletions = useMemo(() => {
+    if (!undoModal) return [];
+    const targetDate = normalizeDate(undoModal.date);
+    return normalizeCompletions(state.completions).filter(
+      (completion) => completion.habitId === undoModal.habitId && completion.date === targetDate,
+    );
+  }, [undoModal, state.completions]);
+
+  useEffect(() => {
+    if (undoModal && undoCompletions.length === 0) {
+      setUndoModal(null);
+    }
+  }, [undoModal, undoCompletions.length]);
 
   const monthFormatter = useMemo(
     () => new Intl.DateTimeFormat(i18n.language === 'tr' ? 'tr' : 'en', { month: 'long' }),
@@ -326,15 +359,18 @@ function App() {
     color: 'var(--text-primary)',
   };
 
-  const handleToggleToday = (habit: Habit) => {
-    const exists = completionSet.has(`${habit.id}|${today}`);
-    if (exists) {
-      dispatch({ type: 'removeCompletion', payload: { habitId: habit.id, date: today } });
-    } else {
-      setCompletionModal({ habitId: habit.id, date: today });
-      setCompletionHours('');
-      setCompletionNote('');
-    }
+  const handleMarkToday = (habit: Habit) => {
+    setCompletionModal({ habitId: habit.id, date: today });
+    setCompletionHours('');
+    setCompletionNote('');
+  };
+
+  const handleOpenUndo = (habit: Habit) => {
+    setUndoModal({ habitId: habit.id, date: today });
+  };
+
+  const handleRemoveCompletion = (completionId: string) => {
+    dispatch({ type: 'removeCompletion', payload: { completionId } });
   };
 
   const toggleTheme = () => {
@@ -483,9 +519,17 @@ function App() {
                       type="button"
                       className={`marker-button ${completedToday ? 'completed' : ''} ${!habit.active ? 'inactive' : ''}`}
                       disabled={!habit.active}
-                      onClick={() => handleToggleToday(habit)}
+                      onClick={() => handleMarkToday(habit)}
                     >
-                      {completedToday ? t('undo') : t('mark')}
+                      {t('mark')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`marker-button ${!completedToday ? 'inactive' : ''}`}
+                      disabled={!habit.active || !completedToday}
+                      onClick={() => handleOpenUndo(habit)}
+                    >
+                      {t('undo')}
                     </button>
                     <button
                       type="button"
@@ -551,7 +595,7 @@ function App() {
                   const habit = state.habits.find((habitItem) => habitItem.id === item.habitId);
                   const isExpanded = expandedCompletions.has(`${item.habitId}-${selectedDay}`);
                   return (
-                    <li key={`${item.habitId}-${item.date}`}>
+                    <li key={`${item.habitId}-${selectedDay}`}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span>
                           <strong>{habit?.name ?? t('unknownHabit')}</strong>
@@ -566,8 +610,13 @@ function App() {
                       </div>
                       {isExpanded && (
                         <div style={{ marginTop: '0.5rem', padding: '0.75rem', background: theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)', borderRadius: '12px' }}>
-                          {item.hours !== undefined && <p><strong>{t('hoursSpent')}:</strong> {item.hours}h</p>}
-                          {item.note && <p><strong>{t('noteOptional')}:</strong> {item.note}</p>}
+                          {item.entries.map((entry) => (
+                            <div key={entry.id} style={{ marginBottom: '0.75rem' }}>
+                              {entry.hours !== undefined && <p><strong>{t('hoursSpent')}:</strong> {entry.hours}h</p>}
+                              {entry.note && <p><strong>{t('noteOptional')}:</strong> {entry.note}</p>}
+                              {entry.hours === undefined && !entry.note && <p>{t('markedEntry')}</p>}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </li>
@@ -575,6 +624,47 @@ function App() {
                 })
               ) : (
                 <li style={{ opacity: 0.75 }}>{t('noCompletedHabits')}</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {undoModal && (
+        <div className="modal-backdrop" onClick={() => setUndoModal(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ opacity: 0.9 }}>
+                {t('undo')} {state.habits.find(h => h.id === undoModal.habitId)?.name}
+              </h3>
+              <button type="button" onClick={() => setUndoModal(null)}>
+                {t('close')}
+              </button>
+            </div>
+            <p style={{ opacity: 0.78, marginTop: '0.75rem' }}>
+              {t('undoSelect')}
+            </p>
+            <ul className="modal-list">
+              {undoCompletions.length > 0 ? (
+                undoCompletions.map((entry) => (
+                  <li key={entry.id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                      <div>
+                        {entry.hours !== undefined && <p><strong>{t('hoursSpent')}:</strong> {entry.hours}h</p>}
+                        {entry.note && <p><strong>{t('noteOptional')}:</strong> {entry.note}</p>}
+                        {entry.hours === undefined && !entry.note && <p>{t('markedEntry')}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCompletion(entry.id)}
+                      >
+                        {t('removeEntry')}
+                      </button>
+                    </div>
+                  </li>
+                ))
+              ) : (
+                <li style={{ opacity: 0.75 }}>{t('noCompletionsToUndo')}</li>
               )}
             </ul>
           </div>

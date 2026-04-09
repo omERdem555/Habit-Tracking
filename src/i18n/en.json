@@ -33,6 +33,10 @@
     "dark": "Dark",
     "hoursSpent": "Hours spent (optional)",
     "noteOptional": "Note (optional)",
+    "markedEntry": "Marked",
+    "undoSelect": "Select the entry you want to undo.",
+    "removeEntry": "Remove",
+    "noCompletionsToUndo": "No entries to undo.",
     "month": "Month",
     "week": "Week",
     "details": "Details"

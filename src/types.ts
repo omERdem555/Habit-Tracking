@@ -8,6 +8,7 @@ export interface Habit {
 }
 
 export interface Completion {
+  id: string;
   habitId: string;
   date: string;
   hours?: number;
@@ -26,4 +27,4 @@ export type Action =
   | { type: 'editHabit'; payload: { id: string; name: string } }
   | { type: 'toggleHabitActive'; payload: { id: string } }
   | { type: 'addCompletion'; payload: { habitId: string; date: string; hours?: number; note?: string } }
-  | { type: 'removeCompletion'; payload: { habitId: string; date: string } };
+  | { type: 'removeCompletion'; payload: { completionId: string } };

@@ -17,8 +17,8 @@ const normalizeDate = (value: string): string => {
 };
 
 const normalizeCompletions = (completions: unknown[]): Completion[] => {
-  const seen = new Set<string>();
   const result: Completion[] = [];
+  let legacyIndex = 0;
 
   completions.forEach((item) => {
     // 🔒 Type guard
@@ -30,13 +30,13 @@ const normalizeCompletions = (completions: unknown[]): Completion[] => {
     if (typeof completion.date !== 'string') return;
 
     const date = normalizeDate(completion.date);
-    const key = `${completion.habitId}|${date}`;
-
-    // 🔒 Duplicate engelleme
-    if (seen.has(key)) return;
-    seen.add(key);
+    const id =
+      typeof completion.id === 'string' && completion.id.trim().length > 0
+        ? completion.id
+        : `legacy-${completion.habitId}-${date}-${legacyIndex++}`;
 
     result.push({
+      id,
       habitId: completion.habitId,
       date,
       hours:

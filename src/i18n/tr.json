@@ -34,6 +34,10 @@
     "dark": "Karanlık",
     "hoursSpent": "Geçirilen saat (isteğe bağlı)",
     "noteOptional": "Not (isteğe bağlı)",
+    "markedEntry": "İşaretlendi",
+    "undoSelect": "Geri almak istediğiniz kaydı seçin.",
+    "removeEntry": "Kaldır",
+    "noCompletionsToUndo": "Geri alınacak kayıt yok.",
     "month": "Ay",
     "week": "Hafta",
     "details": "Detaylar"
