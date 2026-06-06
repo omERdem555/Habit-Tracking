@@ -10,8 +10,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    const swUrl = `${import.meta.env.BASE_URL}service-worker.js`;
+
     navigator.serviceWorker
-      .register('/service-worker.js')
+      .register(swUrl)
       .then((registration) => {
         registration.update();
       })
