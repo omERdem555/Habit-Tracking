@@ -39,11 +39,11 @@ const RUNTIME_CACHE = `habit-tracker-runtime-${CACHE_VERSION}`;
 
 const PRECACHE_URLS = [
   '/',
-  '/manifest.json',
-  '/icon72.png',
-  '/icon96.png',
-  '/icon192.png',
-  '/icon512.png',
+  './manifest.json',
+  './icon72.png',
+  './icon96.png',
+  './icon192.png',
+  './icon512.png',
 ];
 
 self.addEventListener('install', (event) => {
