@@ -22,30 +22,52 @@ export const LoginPage = () => {
   };
 
   return (
-    <div style={{ padding: 24, maxWidth: 360, margin: '0 auto' }}>
-      <h2>Login</h2>
+    <div className="login-page">
+      <div className="card login-card">
+        <div className="login-header">
+          <h1>Habit Tracker</h1>
+          <p>Track habits, get reminders, and stay consistent.</p>
+        </div>
 
-      <input
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
+        <div className="login-form">
+          <label>
+            Email
+            <input
+              className="login-input"
+              placeholder="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
 
-      <input
-        placeholder="Password"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
+          <label>
+            Password
+            <input
+              className="login-input"
+              placeholder="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
 
-      <button onClick={handleLogin}>Login</button>
-      <button onClick={handleRegister}>Register</button>
+          <div className="login-actions">
+            <button className="login-button primary" onClick={handleLogin}>
+              Login
+            </button>
+            <button className="login-button secondary" onClick={handleRegister}>
+              Register
+            </button>
+          </div>
 
-      <hr />
+          <div className="login-divider">or continue with</div>
 
-      <button onClick={handleGoogle}>
-        Continue with Google
-      </button>
+          <button className="login-button oauth" onClick={handleGoogle}>
+            Continue with Google
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
