@@ -2,10 +2,16 @@ import { getToken } from 'firebase/messaging';
 import { messaging } from './firebase';
 
 export const initFCMForUser = async (userId: string, i18n: any, notificationSettings: any) => {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator)) return null;
+
+  const functionUrl = import.meta.env.VITE_FIREBASE_FUNCTION_URL;
+  if (!functionUrl) {
+    console.warn('FCM backend URL not configured. Skipping device registration.');
+    return null;
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return;
+  if (permission !== 'granted') return null;
 
   const registration = await navigator.serviceWorker.ready;
 
@@ -14,18 +20,22 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     serviceWorkerRegistration: registration,
   });
 
-  await fetch('YOUR_FUNCTION_URL/registerDevice', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      token,
-      userId,
-      platform: 'web',
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      language: i18n.language,
-      notificationSettings,
-    }),
-  });
+  try {
+    await fetch(`${functionUrl}/registerDevice`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        userId,
+        platform: 'web',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        language: i18n.language,
+        notificationSettings,
+      }),
+    });
+  } catch (error) {
+    console.error('Failed to register device for FCM', error);
+  }
 
   return token;
 };

@@ -292,16 +292,26 @@ function App() {
 
 
   const handleSaveSettings = async () => {
-    if (state.notificationSettings.enabled) {
+    if (!('Notification' in window)) {
+      setSettingsOpen(false);
+      return;
+    }
 
-      if (!('Notification' in window)) {
-        alert('Notifications not supported');
-        return;
-      }
+    let currentPermission = Notification.permission;
 
-      const permission = await Notification.requestPermission();
+    if (state.notificationSettings.enabled && currentPermission === 'default') {
+      currentPermission = await Notification.requestPermission();
 
-      if (permission !== 'granted') {
+      if (currentPermission !== 'granted') {
+        dispatch({
+          type: 'updateNotificationSettings',
+          payload: {
+            ...state.notificationSettings,
+            enabled: false,
+            permissionStatus: currentPermission,
+          },
+        });
+
         alert(
           i18n.language === 'tr'
             ? 'Bildirim izni verilmedi.'
@@ -311,6 +321,16 @@ function App() {
         return;
       }
     }
+
+    dispatch({
+      type: 'updateNotificationSettings',
+      payload: {
+        ...state.notificationSettings,
+        permissionStatus: currentPermission,
+        enabled:
+          state.notificationSettings.enabled && currentPermission === 'granted',
+      },
+    });
 
     setSettingsOpen(false);
   };

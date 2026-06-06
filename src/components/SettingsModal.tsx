@@ -21,21 +21,25 @@ function SettingsModal({
   if (!settingsOpen) return null;
 
   const handleNotificationToggle = async (checked: boolean) => {
-    // OFF
+    const permissionSupported = 'Notification' in window;
+    const currentPermission = permissionSupported
+      ? Notification.permission
+      : 'denied';
+
     if (!checked) {
       dispatch({
         type: 'updateNotificationSettings',
         payload: {
           ...state.notificationSettings,
           enabled: false,
+          permissionStatus: currentPermission,
         },
       });
 
       return;
     }
 
-    // Browser support check
-    if (!('Notification' in window)) {
+    if (!permissionSupported) {
       alert(
         i18n.language === 'tr'
           ? 'Bu cihaz bildirim desteklemiyor.'
@@ -45,43 +49,98 @@ function SettingsModal({
       return;
     }
 
-    // Already granted
-    if (Notification.permission === 'granted') {
+    if (currentPermission === 'granted') {
       dispatch({
         type: 'updateNotificationSettings',
         payload: {
           ...state.notificationSettings,
           enabled: true,
+          permissionStatus: currentPermission,
         },
       });
-
       return;
     }
 
-    // Ask permission
     const permission = await Notification.requestPermission();
 
-    if (permission === 'granted') {
-      dispatch({
-        type: 'updateNotificationSettings',
-        payload: {
-          ...state.notificationSettings,
-          enabled: true,
-        },
-      });
-    } else {
-      dispatch({
-        type: 'updateNotificationSettings',
-        payload: {
-          ...state.notificationSettings,
-          enabled: false,
-        },
-      });
+    dispatch({
+      type: 'updateNotificationSettings',
+      payload: {
+        ...state.notificationSettings,
+        enabled: permission === 'granted',
+        permissionStatus: permission,
+      },
+    });
 
+    if (permission !== 'granted') {
       alert(
         i18n.language === 'tr'
           ? 'Bildirim izni reddedildi.'
           : 'Notification permission denied.',
+      );
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    if (!('Notification' in window)) {
+      alert(
+        i18n.language === 'tr'
+          ? 'Bu cihaz bildirim desteklemiyor.'
+          : 'Notifications are not supported on this device.',
+      );
+      return;
+    }
+
+    let permission = Notification.permission;
+
+    if (permission !== 'granted') {
+      permission = await Notification.requestPermission();
+      dispatch({
+        type: 'updateNotificationSettings',
+        payload: {
+          ...state.notificationSettings,
+          permissionStatus: permission,
+          enabled: permission === 'granted' && state.notificationSettings.enabled,
+        },
+      });
+    }
+
+    if (permission !== 'granted') {
+      alert(
+        i18n.language === 'tr'
+          ? 'Bildirim izni yok. Lütfen izin verin.'
+          : 'Notification permission is required. Please allow it.',
+      );
+      return;
+    }
+
+    const title =
+      i18n.language === 'tr' ? 'Test Bildirimi' : 'Test Notification';
+    const body =
+      i18n.language === 'tr'
+        ? 'Bildirim sistemi doğru çalışıyor.'
+        : 'Your notification system is working correctly.';
+
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+
+      if (registration?.showNotification) {
+        registration.showNotification(title, {
+          body,
+          icon: './icon192.png',
+        });
+      } else {
+        new Notification(title, {
+          body,
+          icon: './icon192.png',
+        });
+      }
+    } catch (error) {
+      console.error('Test notification failed', error);
+      alert(
+        i18n.language === 'tr'
+          ? 'Test bildirimi gönderilemedi.'
+          : 'Failed to send test notification.',
       );
     }
   };
@@ -222,13 +281,24 @@ function SettingsModal({
             />
           </div>
 
-          <button
-            type="button"
-            className="settings-save-btn"
-            onClick={handleSaveSettings}
-          >
-            {t('save')}
-          </button>
+          <div style={{ display: 'grid', gap: '0.75rem' }}>
+            <button
+              type="button"
+              className="settings-save-btn"
+              onClick={handleSaveSettings}
+            >
+              {t('save')}
+            </button>
+            <button
+              type="button"
+              className="settings-save-btn"
+              onClick={handleSendTestNotification}
+            >
+              {i18n.language === 'tr'
+                ? 'Test Bildirimi Gönder'
+                : 'Send Test Notification'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

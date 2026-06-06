@@ -96,7 +96,7 @@ export default function useNotifications({
 
         const payload = {
           body,
-          icon: '/icon512.png',
+          icon: './icon512.png',
           data: {
             type: 'reminder',
             habitIds: missing.map(h => h.id),
