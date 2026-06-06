@@ -28,9 +28,12 @@ import AddHabitForm from './components/AddHabitForm';
 import useNotifications from './hooks/useNotifications';
 import useTheme from './hooks/useTheme';
 
+/* auth */
+import { useAuth } from './auth/AuthContext';
+
 /*firebase*/
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './lib/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import { initFCMForUser } from './lib/fcm';
 
 /* constants */
@@ -62,6 +65,9 @@ function App() {
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  const [remoteStateLoaded, setRemoteStateLoaded] = useState(false);
+
+  const { user } = useAuth();
 
   const isStandalone =
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -96,35 +102,99 @@ function App() {
   /* Firebase Cloud Messaging token retrieval */
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) return;
+    let canceled = false;
 
+    if (!user) {
+      setRemoteStateLoaded(false);
+      return;
+    }
+
+    const loadRemoteState = async () => {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const snapshot = await getDoc(userDocRef);
+
+        if (!snapshot.exists()) {
+          setRemoteStateLoaded(true);
+          return;
+        }
+
+        const data = snapshot.data();
+
+        if (data?.state && typeof data.state === 'object') {
+          dispatch({
+            type: 'load',
+            payload: {
+              ...defaultState,
+              ...data.state,
+            },
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load user state:', err);
+      } finally {
+        if (!canceled) {
+          setRemoteStateLoaded(true);
+        }
+      }
+    };
+
+    loadRemoteState();
+
+    return () => {
+      canceled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const initFCM = async () => {
       try {
         const token = await initFCMForUser(
           user.uid,
           i18n,
-          state.notificationSettings
+          state.notificationSettings,
         );
 
-        // -----------------------------
-        // TOKEN DUPLICATE GUARD
-        // -----------------------------
         if (!token) return;
 
         const storedToken = localStorage.getItem('fcm_token');
-
-        if (storedToken === token) {
-          return;
-        }
+        if (storedToken === token) return;
 
         localStorage.setItem('fcm_token', token);
       } catch (err) {
         console.error('FCM init failed:', err);
       }
-    });
+    };
 
-    return () => unsub();
-  }, [i18n, state.notificationSettings]);
+    initFCM();
+  }, [user, i18n, state.notificationSettings]);
+
+  useEffect(() => {
+    if (!user || !remoteStateLoaded) return;
+
+    const saveRemoteState = async () => {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(
+          userDocRef,
+          {
+            state: {
+              ...state,
+              schemaVersion: defaultState.schemaVersion,
+            },
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (err) {
+        console.error('Failed to save user state:', err);
+      }
+    };
+
+    saveRemoteState();
+  }, [user, state, remoteStateLoaded]);
 
   /* ================= DERIVED ================= */
 
