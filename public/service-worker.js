@@ -20,7 +20,8 @@ messaging.onBackgroundMessage((payload) => {
     payload.notification?.title || 'Habit Tracker',
     {
       body: payload.notification?.body || '',
-      icon: './icon192.png',
+      icon: '/icon192.png',
+      badge: '/icon192.png',
     }
   );
 });

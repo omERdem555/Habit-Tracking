@@ -127,12 +127,13 @@ function SettingsModal({
       if (registration?.showNotification) {
         registration.showNotification(title, {
           body,
-          icon: './icon192.png',
+          icon: '/icon192.png',
+          badge: '/icon192.png',
         });
       } else {
         new Notification(title, {
           body,
-          icon: './icon192.png',
+          icon: '/icon192.png',
         });
       }
     } catch (error) {
