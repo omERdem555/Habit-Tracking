@@ -4,6 +4,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
 } from 'firebase/auth';
@@ -55,8 +56,19 @@ export const registerEmail = (
   );
 };
 
-export const loginWithGoogle = () => {
-  return signInWithPopup(auth, googleProvider);
+const mobileUserAgent = /Mobi|Android|iPhone|iPad|iPod/i;
+
+export const loginWithGoogle = async () => {
+  // Use redirect on mobile in case popup blocking prevents Google login.
+  if (typeof window !== 'undefined' && mobileUserAgent.test(navigator.userAgent)) {
+    return signInWithRedirect(auth, googleProvider);
+  }
+
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (error) {
+    return signInWithRedirect(auth, googleProvider);
+  }
 };
 
 
