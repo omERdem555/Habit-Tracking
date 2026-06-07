@@ -10,4 +10,4 @@ export default function Root() {
       </ProtectedRoute>
     </AuthProvider>
   );
-}
+}// Root.tsx
