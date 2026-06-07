@@ -1,11 +1,14 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   loginEmail,
   registerEmail,
   loginWithGoogle,
 } from '../lib/firebase';
+import { getFirebaseErrorMessage } from '../lib/firebaseErrors';
 
 export const LoginPage = () => {
+  const { i18n } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -13,28 +16,44 @@ export const LoginPage = () => {
   const handleLogin = async () => {
     setError('');
     if (!email || !password) {
-      setError('Email ve şifre giriniz. / Enter email and password.');
+      setError(
+        i18n.language === 'tr'
+          ? 'Email ve şifre giriniz.'
+          : 'Enter email and password.',
+      );
       return;
     }
 
     try {
       await loginEmail(email, password);
     } catch (err: any) {
-      setError(err.message || 'Giriş başarısız. / Login failed.');
+      const translatedError = getFirebaseErrorMessage(
+        err,
+        i18n.language === 'tr' ? 'tr' : 'en',
+      );
+      setError(translatedError);
     }
   };
 
   const handleRegister = async () => {
     setError('');
     if (!email || !password) {
-      setError('Email ve şifre giriniz. / Enter email and password.');
+      setError(
+        i18n.language === 'tr'
+          ? 'Email ve şifre giriniz.'
+          : 'Enter email and password.',
+      );
       return;
     }
 
     try {
       await registerEmail(email, password);
     } catch (err: any) {
-      setError(err.message || 'Kayıt başarısız. / Register failed.');
+      const translatedError = getFirebaseErrorMessage(
+        err,
+        i18n.language === 'tr' ? 'tr' : 'en',
+      );
+      setError(translatedError);
     }
   };
 
@@ -43,7 +62,11 @@ export const LoginPage = () => {
     try {
       await loginWithGoogle();
     } catch (err: any) {
-      setError(err.message || 'Google ile giriş başarısız. / Google sign-in failed.');
+      const translatedError = getFirebaseErrorMessage(
+        err,
+        i18n.language === 'tr' ? 'tr' : 'en',
+      );
+      setError(translatedError);
     }
   };
 
