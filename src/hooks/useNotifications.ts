@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { AppState, Habit } from '../types';
 import { localDateString } from '../lib/date';
-import { buildReminderMessage } from '../lib/notificationMessages';
+import { buildReminderMessages } from '../lib/notificationMessages';
 
 type Params = {
   enabled: boolean;
@@ -41,7 +41,6 @@ export default function useNotifications({
   useEffect(() => {
     if (!('Notification' in window)) return;
 
-    // ❗ single source of truth
     if (!enabled) return;
     if (Notification.permission !== 'granted') return;
 
@@ -50,11 +49,11 @@ export default function useNotifications({
 
       const doneSet = new Set(
         completions
-          .filter(c => c.date.slice(0, 10) === today)
-          .map(c => c.habitId)
+          .filter((c) => c.date.slice(0, 10) === today)
+          .map((c) => c.habitId),
       );
 
-      return habits.filter(h => h.active && !doneSet.has(h.id));
+      return habits.filter((h) => h.active && !doneSet.has(h.id));
     };
 
     const getMissedYesterday = () => {
@@ -64,11 +63,11 @@ export default function useNotifications({
 
       const doneSet = new Set(
         completions
-          .filter(c => c.date.slice(0, 10) === yd)
-          .map(c => c.habitId)
+          .filter((c) => c.date.slice(0, 10) === yd)
+          .map((c) => c.habitId),
       );
 
-      return habits.filter(h => h.active && !doneSet.has(h.id));
+      return habits.filter((h) => h.active && !doneSet.has(h.id));
     };
 
     const tick = async () => {
@@ -82,32 +81,31 @@ export default function useNotifications({
       const interval = settings.intervalHours * 60 * 60 * 1000;
       if (now - meta.lastNotified < interval) return;
 
-
-      const missing = getMissingToday();
-      if (missing.length === 0) return;
-
       const missedYesterday = getMissedYesterday();
+      const missing = getMissingToday();
+      const bodies = buildReminderMessages(language, missing, missedYesterday);
 
-      const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
-      const body = buildReminderMessage(language, missing, missedYesterday);
+      if (bodies.length === 0) return;
 
       try {
         const reg = await navigator.serviceWorker.getRegistration();
 
-        const payload = {
-          body,
-          icon: '/icon512.png',
-          badge: '/icon192.png', 
-          data: {
-            type: 'reminder',
-            habitIds: missing.map(h => h.id),
-          },
-        };
+        for (const body of bodies) {
+          const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
+          const payload = {
+            body,
+            icon: '/icon512.png',
+            badge: '/icon192.png',
+            data: {
+              type: 'reminder',
+            },
+          };
 
-        if (reg?.showNotification) {
-          reg.showNotification(title, payload);
-        } else {
-          new Notification(title, { body });
+          if (reg?.showNotification) {
+            reg.showNotification(title, payload);
+          } else {
+            new Notification(title, { body });
+          }
         }
 
         writeMeta({ lastNotified: now });

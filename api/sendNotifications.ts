@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import admin from 'firebase-admin';
-import type { Firestore } from 'firebase-admin/firestore';
-import type { DocumentReference } from 'firebase-admin/firestore';
+import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
 
 type Habit = {
   id: string;
@@ -118,26 +117,31 @@ function getMissedYesterday(
   return habits.filter((h) => h.active && !doneSet.has(h.id));
 }
 
-function buildReminderMessage(
+function buildReminderMessages(
   language: string,
   missing: Habit[],
   missedYesterday: Habit[],
-): string {
-  const names = (arr: Habit[]) =>
-    arr
-      .slice(0, 3)
-      .map((h) => h.name)
-      .join(', ');
+): string[] {
+  const names = (arr: Habit[]) => arr.slice(0, 3).map((h) => h.name).join(', ');
+  const messages: string[] = [];
 
   if (missedYesterday.length > 0) {
-    return language === 'tr'
-      ? `Dün dünde kaldı. Bugün yeniden başla: ${names(missedYesterday)}`
-      : `Yesterday is gone. Restart today: ${names(missedYesterday)}`;
+    messages.push(
+      language === 'tr'
+        ? `Dün dünde kaldı. Bugün yeniden başla: ${names(missedYesterday)}`
+        : `Yesterday is gone. Restart today: ${names(missedYesterday)}`,
+    );
   }
 
-  return language === 'tr'
-    ? `Bugün şu görevleri tamamlamak ister misin: ${names(missing)}`
-    : `Do you want to complete: ${names(missing)}?`;
+  if (missing.length > 0) {
+    messages.push(
+      language === 'tr'
+        ? `Bugün şu görevleri tamamlamak ister misin: ${names(missing)}`
+        : `Do you want to complete: ${names(missing)}?`,
+    );
+  }
+
+  return messages;
 }
 
 function initAdmin() {
@@ -176,10 +180,7 @@ function isAuthorized(req: VercelRequest): boolean {
   const cronHeader = req.headers['x-cron-secret'];
   const authHeader = req.headers.authorization;
 
-  return (
-    cronHeader === secret ||
-    authHeader === `Bearer ${secret}`
-  );
+  return cronHeader === secret || authHeader === `Bearer ${secret}`;
 }
 
 const userStateCache = new Map<string, UserAppState | null>();
@@ -230,6 +231,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
     const messaging = admin.messaging();
     const now = new Date();
     const devicesSnap = await db.collection('devices').get();
+
     console.info('sendNotifications start', {
       devices: devicesSnap.size,
       timestamp: now.toISOString(),
@@ -258,8 +260,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       if (!settings.enabled) continue;
 
-      const timezone =
-        (device.timezone as string | undefined) || 'UTC';
+      const timezone = (device.timezone as string | undefined) || 'UTC';
       const language = (device.language as string | undefined) || 'tr';
 
       if (!isWithinNotificationWindow(settings, timezone, now)) continue;
@@ -269,27 +270,22 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       const habits = userState.habits ?? [];
       const completions = userState.completions ?? [];
-
+      const missedYesterday = getMissedYesterday(habits, completions, timezone, now);
       const missing = getMissingToday(habits, completions, timezone, now);
-      if (missing.length === 0) continue;
+      const bodies = buildReminderMessages(language, missing, missedYesterday);
 
-      const missedYesterday = getMissedYesterday(
-        habits,
-        completions,
-        timezone,
-        now,
-      );
+      if (bodies.length === 0) continue;
 
-      const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
-      const body = buildReminderMessage(language, missing, missedYesterday);
-
-      messages.push({
-        token,
-        notification: { title, body },
-        webpush: {
-          fcmOptions: { link: '/' },
-        },
-      });
+      for (const body of bodies) {
+        const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
+        messages.push({
+          token,
+          notification: { title, body },
+          webpush: {
+            fcmOptions: { link: '/' },
+          },
+        });
+      }
 
       pendingUpdates.push({
         ref: deviceDoc.ref,

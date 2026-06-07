@@ -33,3 +33,30 @@ export const buildReminderMessage = (
 
   return parts.join(' | ');
 };
+
+export const buildReminderMessages = (
+  language: string,
+  missing: Habit[],
+  missedYesterday: Habit[],
+) => {
+  const names = (arr: Habit[]) => arr.slice(0, 3).map((h) => h.name).join(', ');
+  const messages: string[] = [];
+
+  if (missedYesterday.length > 0) {
+    messages.push(
+      language === 'tr'
+        ? `Dün dünde kaldı. Bugün yeniden başla: ${names(missedYesterday)}`
+        : `Yesterday is gone. Restart today: ${names(missedYesterday)}`,
+    );
+  }
+
+  if (missing.length > 0) {
+    messages.push(
+      language === 'tr'
+        ? `Bugün şu görevleri tamamlamak ister misin: ${names(missing)}`
+        : `Do you want to complete: ${names(missing)}?`,
+    );
+  }
+
+  return messages;
+};
