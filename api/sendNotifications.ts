@@ -9,7 +9,7 @@ import {
   isWithinNotificationWindow,
   type NotificationSettings,
   type UserAppState,
-} from './lib/reminders';
+} from '../src/lib/reminders';
 
 if (!admin.apps.length) {
   const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
