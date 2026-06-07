@@ -6,13 +6,15 @@ export const getFirebaseErrorMessage = (
   language: 'en' | 'tr' = 'en'
 ): string => {
   // Extract error code from Firebase error
-  let errorCode = '';
+  let errorCode = error?.code || '';
   let errorMessage = error?.message || '';
 
   // Firebase error format: "Firebase: Error message (auth/error-code)."
-  const codeMatch = errorMessage.match(/\(auth\/([^)]+)\)/);
-  if (codeMatch) {
-    errorCode = codeMatch[1];
+  if (!errorCode) {
+    const codeMatch = errorMessage.match(/\(auth\/([^)]+)\)/);
+    if (codeMatch) {
+      errorCode = codeMatch[1];
+    }
   }
 
   const translations: Record<string, { en: string; tr: string }> = {
@@ -55,6 +57,18 @@ export const getFirebaseErrorMessage = (
     'network-request-failed': {
       en: 'A network error occurred. Please check your connection.',
       tr: 'Ağ hatası oluştu. Lütfen bağlantınızı kontrol edin.',
+    },
+    'unauthorized-domain': {
+      en: 'This domain is not authorized for Google sign-in. Add localhost or your current domain in Firebase Authentication settings.',
+      tr: 'Bu alan adı Google ile giriş için yetkili değil. Firebase Authentication ayarlarından localhost veya mevcut domaini ekleyin.',
+    },
+    'popup-blocked': {
+      en: 'The popup was blocked by your browser. Please allow popups and try again.',
+      tr: 'Açılır pencere tarayıcınız tarafından engellendi. Lütfen açılır pencerelere izin verip tekrar deneyin.',
+    },
+    'popup-closed-by-user': {
+      en: 'The popup was closed before completing sign-in. Please try again.',
+      tr: 'Giriş tamamlanmadan önce pencere kapatıldı. Lütfen tekrar deneyin.',
     },
   };
 
