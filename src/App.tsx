@@ -46,7 +46,6 @@ import {
 
 /* constants */
 const HABIT_COLOR = '#60a5fa';
-const INSTALL_DISMISSED_KEY = 'habit-tracker-pwa-install-dismissed';
 
 /* ================= APP ================= */
 
@@ -72,7 +71,9 @@ function App() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(
+    () => !isStandaloneMode(),
+  );
   const [remoteStateLoaded, setRemoteStateLoaded] = useState(false);
 
   const { user, loading: authLoading } = useAuth();
@@ -102,15 +103,14 @@ function App() {
     }
   }, [state, user]);
 
-  /* PWA install prompt */
+  /* PWA install prompt — only hide when currently running as installed PWA */
   useEffect(() => {
-    if (isStandalone) return;
+    setShowInstallPrompt(!isStandalone);
 
-    const dismissed =
-      localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
-
-    if (!dismissed) {
-      setShowInstallPrompt(true);
+    try {
+      localStorage.removeItem('habit-tracker-pwa-install-dismissed');
+    } catch {
+      // ignore
     }
   }, [isStandalone]);
 
@@ -400,11 +400,6 @@ function App() {
   };
 
   const handleDismissInstall = () => {
-    try {
-      localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
-    } catch {
-      // ignore
-    }
     setShowInstallPrompt(false);
   };
 
@@ -412,7 +407,7 @@ function App() {
     const outcome = await triggerNativeInstall();
 
     if (outcome === 'accepted') {
-      handleDismissInstall();
+      setShowInstallPrompt(false);
     }
   };
 
