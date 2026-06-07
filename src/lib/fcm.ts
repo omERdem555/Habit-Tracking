@@ -21,9 +21,15 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
   });
 
   try {
+    // include auth idToken for server-side verification
+    const idToken = await (await import('./firebase')).auth.currentUser?.getIdToken?.();
+
     await fetch(`${functionUrl}/registerDevice`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
       body: JSON.stringify({
         token,
         userId,

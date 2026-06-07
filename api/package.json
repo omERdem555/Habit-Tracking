@@ -1,0 +1,9 @@
+{
+  "name": "habit-tracker-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "firebase-admin": "^11.11.0"
+  }
+}
