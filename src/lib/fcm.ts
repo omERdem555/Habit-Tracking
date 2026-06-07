@@ -4,9 +4,15 @@ import { auth, messaging } from './firebase';
 export const initFCMForUser = async (userId: string, i18n: any, notificationSettings: any) => {
   if (!('serviceWorker' in navigator)) return null;
 
-  const functionUrl = import.meta.env.VITE_FIREBASE_FUNCTION_URL;
-  if (!functionUrl) {
-    console.warn('FCM backend URL not configured. Skipping device registration.');
+  const functionUrl = import.meta.env.VITE_FIREBASE_FUNCTION_URL?.trim();
+  if (
+    !functionUrl ||
+    functionUrl === window.location.origin ||
+    functionUrl === 'http://localhost:5173'
+  ) {
+    console.warn(
+      'FCM backend URL not configured or invalid for local dev. Skipping device registration.',
+    );
     return null;
   }
 
