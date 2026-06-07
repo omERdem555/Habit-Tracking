@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  loginEmail,
-  registerEmail,
-  loginWithGoogle,
-} from '../lib/firebase';
+import { loginEmail, registerEmail } from '../lib/firebase';
 import { getFirebaseErrorMessage } from '../lib/firebaseErrors';
 
 export const LoginPage = () => {
@@ -57,19 +53,6 @@ export const LoginPage = () => {
     }
   };
 
-  const handleGoogle = async () => {
-    setError('');
-    try {
-      await loginWithGoogle();
-    } catch (err: any) {
-      const translatedError = getFirebaseErrorMessage(
-        err,
-        i18n.language === 'tr' ? 'tr' : 'en',
-      );
-      setError(translatedError);
-    }
-  };
-
   return (
     <div className="login-page">
       <div className="card login-card">
@@ -111,12 +94,6 @@ export const LoginPage = () => {
               Register
             </button>
           </div>
-
-          <div className="login-divider">or continue with</div>
-
-          <button type="button" className="login-button oauth" onClick={handleGoogle}>
-            Continue with Google
-          </button>
         </div>
       </div>
     </div>

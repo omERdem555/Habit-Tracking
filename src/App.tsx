@@ -67,7 +67,7 @@ function App() {
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [remoteStateLoaded, setRemoteStateLoaded] = useState(false);
 
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const isStandalone =
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -76,12 +76,25 @@ function App() {
   /* ================= EFFECTS ================= */
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (user) {
+      try {
+        window.localStorage.removeItem('habit-tracker-v1');
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
     dispatch({ type: 'load', payload: loadState() });
-  }, []);
+  }, [authLoading, user]);
 
   useEffect(() => {
-    saveState(state);
-  }, [state]);
+    if (!user) {
+      saveState(state);
+    }
+  }, [state, user]);
 
   /* PWA install prompt */
   useEffect(() => {
