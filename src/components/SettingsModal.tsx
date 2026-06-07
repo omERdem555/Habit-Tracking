@@ -36,14 +36,7 @@ function SettingsModal({
       return;
     }
 
-    if (!('Notification' in window)) {
-      alert(
-        i18n.language === 'tr'
-          ? 'Bu cihaz bildirim desteklemiyor.'
-          : 'Notifications are not supported on this device.',
-      );
-      return;
-    }
+    if (!('Notification' in window)) return;
 
     let permission = Notification.permission;
 
@@ -51,35 +44,18 @@ function SettingsModal({
       permission = await Notification.requestPermission();
     }
 
-    const enabled = permission === 'granted';
-
     dispatch({
       type: 'updateNotificationSettings',
       payload: {
         ...state.notificationSettings,
-        enabled,
+        enabled: permission === 'granted',
         permissionStatus: permission,
       },
     });
-
-    if (!enabled && permission === 'denied') {
-      alert(
-        i18n.language === 'tr'
-          ? 'Bildirim izni reddedildi. Tarayıcı veya telefon ayarlarından tekrar açabilirsiniz.'
-          : 'Notification permission denied. You can enable it from your browser or phone settings.',
-      );
-    }
   };
 
   const handleSendTestNotification = async () => {
-    if (!('Notification' in window)) {
-      alert(
-        i18n.language === 'tr'
-          ? 'Bu cihaz bildirim desteklemiyor.'
-          : 'Notifications are not supported on this device.',
-      );
-      return;
-    }
+    if (!('Notification' in window)) return;
 
     let permission = Notification.permission;
 
@@ -95,9 +71,7 @@ function SettingsModal({
       });
     }
 
-    if (permission !== 'granted') {
-      return;
-    }
+    if (permission !== 'granted') return;
 
     const title =
       i18n.language === 'tr' ? 'Test Bildirimi' : 'Test Notification';
@@ -123,11 +97,6 @@ function SettingsModal({
       }
     } catch (error) {
       console.error('Test notification failed', error);
-      alert(
-        i18n.language === 'tr'
-          ? 'Test bildirimi gönderilemedi.'
-          : 'Failed to send test notification.',
-      );
     }
   };
 
@@ -169,28 +138,6 @@ function SettingsModal({
                 : 'Enable Notifications'}
             </span>
           </label>
-
-          <div
-            style={{
-              fontSize: 12,
-              opacity: 0.7,
-            }}
-          >
-            {Notification.permission === 'granted' &&
-              (i18n.language === 'tr'
-                ? 'Bildirim izni verildi'
-                : 'Notification permission granted')}
-
-            {Notification.permission === 'denied' &&
-              (i18n.language === 'tr'
-                ? 'Bildirim izni reddedildi'
-                : 'Notification permission denied')}
-
-            {Notification.permission === 'default' &&
-              (i18n.language === 'tr'
-                ? 'Bildirim izni bekleniyor'
-                : 'Notification permission pending')}
-          </div>
 
           <div className="settings-field">
             <span className="settings-label">

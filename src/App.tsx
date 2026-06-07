@@ -97,26 +97,23 @@ function App() {
     }
   }, [state, user]);
 
-  /* PWA install prompt */
+  /* PWA install prompt — only when the browser can show the native install UI */
   useEffect(() => {
     if (isStandalone) return;
-
-    const dismissed =
-      localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
 
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPromptEvent(e);
+
+      const dismissed =
+        localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
+
       if (!dismissed) {
         setShowInstallPrompt(true);
       }
     };
 
     window.addEventListener('beforeinstallprompt', handler);
-
-    if (!dismissed) {
-      setShowInstallPrompt(true);
-    }
 
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, [isStandalone]);
@@ -384,22 +381,9 @@ function App() {
   };
 
   const handleInstallApp = async () => {
-    if (!installPromptEvent) {
-      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (!installPromptEvent) return;
 
-      alert(
-        isIOS
-          ? i18n.language === 'tr'
-            ? 'Safari\'de Paylaş düğmesine dokunun, ardından "Ana Ekrana Ekle"yi seçin.'
-            : 'In Safari, tap Share, then choose "Add to Home Screen".'
-          : i18n.language === 'tr'
-            ? 'Tarayıcı menüsünden "Uygulamayı yükle" veya "Ana ekrana ekle" seçeneğini kullanın.'
-            : 'Use your browser menu to install the app or add it to your home screen.',
-      );
-      return;
-    }
-
-    (installPromptEvent as any).prompt();
+    await (installPromptEvent as any).prompt();
     const res = await (installPromptEvent as any).userChoice;
 
     if (res.outcome === 'accepted') {
