@@ -8,7 +8,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <Root />
 );
 
-if ('serviceWorker' in navigator) {
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     const swUrl = `${import.meta.env.BASE_URL}service-worker.js`;
 
