@@ -177,13 +177,17 @@ function App() {
     const saveRemoteState = async () => {
       try {
         const userDocRef = doc(db, 'users', user.uid);
+        const sanitizedState = JSON.parse(
+          JSON.stringify({
+            ...state,
+            schemaVersion: defaultState.schemaVersion,
+          }),
+        );
+
         await setDoc(
           userDocRef,
           {
-            state: {
-              ...state,
-              schemaVersion: defaultState.schemaVersion,
-            },
+            state: sanitizedState,
             updatedAt: serverTimestamp(),
           },
           { merge: true },

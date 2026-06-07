@@ -1,5 +1,5 @@
 import { getToken } from 'firebase/messaging';
-import { messaging } from './firebase';
+import { auth, messaging } from './firebase';
 
 export const initFCMForUser = async (userId: string, i18n: any, notificationSettings: any) => {
   if (!('serviceWorker' in navigator)) return null;
@@ -21,8 +21,7 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
   });
 
   try {
-    // include auth idToken for server-side verification
-    const idToken = await (await import('./firebase')).auth.currentUser?.getIdToken?.();
+    const idToken = await auth.currentUser?.getIdToken?.();
 
     await fetch(`${functionUrl}/registerDevice`, {
       method: 'POST',
