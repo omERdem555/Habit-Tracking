@@ -26,7 +26,7 @@ messaging.onBackgroundMessage((payload) => {
   );
 });
 
-const CACHE_VERSION = 'v7';
+const CACHE_VERSION = 'v8';
 const STATIC_CACHE = `habit-tracker-static-${CACHE_VERSION}`;
 const OFFLINE_CACHE = `habit-tracker-offline-${CACHE_VERSION}`;
 

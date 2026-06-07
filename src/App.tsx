@@ -35,6 +35,14 @@ import { useAuth } from './auth/AuthContext';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { initFCMForUser } from './lib/fcm';
+import {
+  getLiveNotificationPermission,
+  isNotificationGranted,
+} from './lib/notifications';
+import {
+  isStandaloneMode,
+  triggerNativeInstall,
+} from './lib/pwaInstall';
 
 /* constants */
 const HABIT_COLOR = '#60a5fa';
@@ -65,14 +73,11 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [remoteStateLoaded, setRemoteStateLoaded] = useState(false);
 
   const { user, loading: authLoading } = useAuth();
 
-  const isStandalone =
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone;
+  const isStandalone = isStandaloneMode();
 
   /* ================= EFFECTS ================= */
 
@@ -97,26 +102,36 @@ function App() {
     }
   }, [state, user]);
 
-  /* PWA install prompt — only when the browser can show the native install UI */
+  /* PWA install prompt */
   useEffect(() => {
     if (isStandalone) return;
 
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setInstallPromptEvent(e);
+    const dismissed =
+      localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
 
-      const dismissed =
-        localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
-
-      if (!dismissed) {
-        setShowInstallPrompt(true);
-      }
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    if (!dismissed) {
+      setShowInstallPrompt(true);
+    }
   }, [isStandalone]);
+
+  useEffect(() => {
+    if (!settingsOpen || !('Notification' in window)) return;
+
+    const livePermission = getLiveNotificationPermission();
+
+    dispatch({
+      type: 'updateNotificationSettings',
+      payload: {
+        ...state.notificationSettings,
+        permissionStatus: livePermission,
+        enabled:
+          state.notificationSettings.enabled &&
+          livePermission === 'granted',
+      },
+    });
+    // Only re-sync when the settings modal opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen]);
 
   /* Firebase Cloud Messaging token retrieval */
 
@@ -141,12 +156,25 @@ function App() {
         const data = snapshot.data();
 
         if (data?.state && typeof data.state === 'object') {
+          const loadedState = {
+            ...defaultState,
+            ...data.state,
+          };
+
+          if ('Notification' in window) {
+            const livePermission = getLiveNotificationPermission();
+            loadedState.notificationSettings = {
+              ...loadedState.notificationSettings,
+              permissionStatus: livePermission,
+              enabled:
+                loadedState.notificationSettings.enabled &&
+                livePermission === 'granted',
+            };
+          }
+
           dispatch({
             type: 'load',
-            payload: {
-              ...defaultState,
-              ...data.state,
-            },
+            payload: loadedState,
           });
         }
       } catch (err) {
@@ -168,8 +196,7 @@ function App() {
   useEffect(() => {
     if (!user) return;
     if (!state.notificationSettings.enabled) return;
-    if (!('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
+    if (!isNotificationGranted()) return;
 
     const initFCM = async () => {
       try {
@@ -325,7 +352,8 @@ function App() {
   /* ================= NOTIFICATIONS ================= */
 
   useNotifications({
-    enabled: state.notificationSettings.enabled,
+    enabled:
+      state.notificationSettings.enabled && isNotificationGranted(),
     settings: state.notificationSettings,
     habits: state.habits,
     completions: state.completions,
@@ -381,31 +409,47 @@ function App() {
   };
 
   const handleInstallApp = async () => {
-    if (!installPromptEvent) return;
+    const outcome = await triggerNativeInstall();
 
-    await (installPromptEvent as any).prompt();
-    const res = await (installPromptEvent as any).userChoice;
-
-    if (res.outcome === 'accepted') {
+    if (outcome === 'accepted') {
       handleDismissInstall();
     }
-
-    setInstallPromptEvent(null);
   };
 
+  const handleNotificationsEnabled = async () => {
+    if (!user || !isNotificationGranted()) return;
 
+    try {
+      const token = await initFCMForUser(
+        user.uid,
+        i18n,
+        {
+          ...state.notificationSettings,
+          enabled: true,
+          permissionStatus: 'granted',
+        },
+      );
 
+      if (!token) return;
+
+      localStorage.setItem('fcm_token', token);
+    } catch (err) {
+      console.error('FCM init failed:', err);
+    }
+  };
 
   const handleSaveSettings = () => {
     if ('Notification' in window) {
+      const livePermission = getLiveNotificationPermission();
+
       dispatch({
         type: 'updateNotificationSettings',
         payload: {
           ...state.notificationSettings,
-          permissionStatus: Notification.permission,
+          permissionStatus: livePermission,
           enabled:
             state.notificationSettings.enabled &&
-            Notification.permission === 'granted',
+            livePermission === 'granted',
         },
       });
     }
@@ -493,6 +537,7 @@ function App() {
         state={state}
         dispatch={dispatch}
         handleSaveSettings={handleSaveSettings}
+        onNotificationsEnabled={handleNotificationsEnabled}
       />
 
       <DayDetailsModal

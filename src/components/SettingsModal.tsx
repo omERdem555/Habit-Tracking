@@ -2,6 +2,12 @@ import { useTranslation } from 'react-i18next';
 import type { AppState } from '../types';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import {
+  getLiveNotificationPermission,
+  isNotificationGranted,
+  requestNotificationPermission,
+} from '../lib/notifications';
+import { ensureServiceWorkerReady } from '../lib/serviceWorker';
 
 interface SettingsModalProps {
   settingsOpen: boolean;
@@ -9,6 +15,7 @@ interface SettingsModalProps {
   state: AppState;
   dispatch: React.Dispatch<any>;
   handleSaveSettings: () => void;
+  onNotificationsEnabled: () => Promise<void>;
 }
 
 function SettingsModal({
@@ -17,20 +24,23 @@ function SettingsModal({
   state,
   dispatch,
   handleSaveSettings,
+  onNotificationsEnabled,
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
 
   if (!settingsOpen) return null;
 
-  const handleNotificationToggle = async (checked: boolean) => {
-    if (!checked) {
+  const notificationsActive =
+    state.notificationSettings.enabled && isNotificationGranted();
+
+  const handleNotificationClick = () => {
+    if (notificationsActive) {
       dispatch({
         type: 'updateNotificationSettings',
         payload: {
           ...state.notificationSettings,
           enabled: false,
-          permissionStatus:
-            'Notification' in window ? Notification.permission : 'denied',
+          permissionStatus: getLiveNotificationPermission(),
         },
       });
       return;
@@ -38,66 +48,67 @@ function SettingsModal({
 
     if (!('Notification' in window)) return;
 
-    let permission = Notification.permission;
+    requestNotificationPermission().then(async (permission) => {
+      const granted = permission === 'granted';
 
-    if (permission !== 'granted') {
-      permission = await Notification.requestPermission();
-    }
+      dispatch({
+        type: 'updateNotificationSettings',
+        payload: {
+          ...state.notificationSettings,
+          enabled: granted,
+          permissionStatus: permission,
+        },
+      });
 
-    dispatch({
-      type: 'updateNotificationSettings',
-      payload: {
-        ...state.notificationSettings,
-        enabled: permission === 'granted',
-        permissionStatus: permission,
-      },
+      if (granted) {
+        await onNotificationsEnabled();
+      }
     });
   };
 
-  const handleSendTestNotification = async () => {
+  const handleSendTestNotification = () => {
     if (!('Notification' in window)) return;
 
-    let permission = Notification.permission;
+    requestNotificationPermission().then(async (permission) => {
+      const granted = permission === 'granted';
 
-    if (permission !== 'granted') {
-      permission = await Notification.requestPermission();
       dispatch({
         type: 'updateNotificationSettings',
         payload: {
           ...state.notificationSettings,
           permissionStatus: permission,
-          enabled: permission === 'granted' && state.notificationSettings.enabled,
+          enabled: granted && state.notificationSettings.enabled,
         },
       });
-    }
 
-    if (permission !== 'granted') return;
+      if (!granted) return;
 
-    const title =
-      i18n.language === 'tr' ? 'Test Bildirimi' : 'Test Notification';
-    const body =
-      i18n.language === 'tr'
-        ? 'Bildirim sistemi doğru çalışıyor.'
-        : 'Your notification system is working correctly.';
+      const title =
+        i18n.language === 'tr' ? 'Test Bildirimi' : 'Test Notification';
+      const body =
+        i18n.language === 'tr'
+          ? 'Bildirim sistemi doğru çalışıyor.'
+          : 'Your notification system is working correctly.';
 
-    try {
-      const registration = await navigator.serviceWorker.getRegistration();
+      try {
+        const registration = await ensureServiceWorkerReady();
 
-      if (registration?.showNotification) {
-        registration.showNotification(title, {
-          body,
-          icon: '/icon192.png',
-          badge: '/icon192.png',
-        });
-      } else {
-        new Notification(title, {
-          body,
-          icon: '/icon192.png',
-        });
+        if (registration?.showNotification) {
+          await registration.showNotification(title, {
+            body,
+            icon: '/icon192.png',
+            badge: '/icon192.png',
+          });
+        } else {
+          new Notification(title, {
+            body,
+            icon: '/icon192.png',
+          });
+        }
+      } catch (error) {
+        console.error('Test notification failed', error);
       }
-    } catch (error) {
-      console.error('Test notification failed', error);
-    }
+    });
   };
 
   return (
@@ -126,10 +137,12 @@ function SettingsModal({
           <label className="settings-toggle">
             <input
               type="checkbox"
-              checked={state.notificationSettings.enabled}
-              onChange={(e) =>
-                handleNotificationToggle(e.target.checked)
-              }
+              checked={notificationsActive}
+              onClick={(e) => {
+                e.preventDefault();
+                handleNotificationClick();
+              }}
+              readOnly
             />
 
             <span>

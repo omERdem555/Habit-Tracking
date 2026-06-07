@@ -1,8 +1,11 @@
 import { getToken } from 'firebase/messaging';
 import { auth, messaging } from './firebase';
+import { ensureServiceWorkerReady } from './serviceWorker';
+import { isNotificationGranted } from './notifications';
 
 export const initFCMForUser = async (userId: string, i18n: any, notificationSettings: any) => {
   if (!('serviceWorker' in navigator)) return null;
+  if (!isNotificationGranted()) return null;
 
   const functionUrl = import.meta.env.VITE_FIREBASE_FUNCTION_URL?.trim();
   if (
@@ -16,9 +19,8 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     return null;
   }
 
-  if (Notification.permission !== 'granted') return null;
-
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await ensureServiceWorkerReady();
+  if (!registration) return null;
 
   const token = await getToken(messaging, {
     vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
