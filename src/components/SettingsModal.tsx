@@ -23,62 +23,50 @@ function SettingsModal({
   if (!settingsOpen) return null;
 
   const handleNotificationToggle = async (checked: boolean) => {
-    const permissionSupported = 'Notification' in window;
-    const currentPermission = permissionSupported
-      ? Notification.permission
-      : 'denied';
-
     if (!checked) {
       dispatch({
         type: 'updateNotificationSettings',
         payload: {
           ...state.notificationSettings,
           enabled: false,
-          permissionStatus: currentPermission,
+          permissionStatus:
+            'Notification' in window ? Notification.permission : 'denied',
         },
       });
-
       return;
     }
 
-    if (!permissionSupported) {
+    if (!('Notification' in window)) {
       alert(
         i18n.language === 'tr'
           ? 'Bu cihaz bildirim desteklemiyor.'
           : 'Notifications are not supported on this device.',
       );
-
       return;
     }
 
-    if (currentPermission === 'granted') {
-      dispatch({
-        type: 'updateNotificationSettings',
-        payload: {
-          ...state.notificationSettings,
-          enabled: true,
-          permissionStatus: currentPermission,
-        },
-      });
-      return;
+    let permission = Notification.permission;
+
+    if (permission !== 'granted') {
+      permission = await Notification.requestPermission();
     }
 
-    const permission = await Notification.requestPermission();
+    const enabled = permission === 'granted';
 
     dispatch({
       type: 'updateNotificationSettings',
       payload: {
         ...state.notificationSettings,
-        enabled: permission === 'granted',
+        enabled,
         permissionStatus: permission,
       },
     });
 
-    if (permission !== 'granted') {
+    if (!enabled && permission === 'denied') {
       alert(
         i18n.language === 'tr'
-          ? 'Bildirim izni reddedildi.'
-          : 'Notification permission denied.',
+          ? 'Bildirim izni reddedildi. Tarayıcı veya telefon ayarlarından tekrar açabilirsiniz.'
+          : 'Notification permission denied. You can enable it from your browser or phone settings.',
       );
     }
   };
@@ -108,11 +96,6 @@ function SettingsModal({
     }
 
     if (permission !== 'granted') {
-      alert(
-        i18n.language === 'tr'
-          ? 'Bildirim izni yok. Lütfen izin verin.'
-          : 'Notification permission is required. Please allow it.',
-      );
       return;
     }
 

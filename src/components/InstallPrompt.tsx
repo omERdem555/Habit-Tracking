@@ -1,16 +1,15 @@
-import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface InstallPromptProps {
   showInstallPrompt: boolean;
   handleInstallApp: () => void;
-  setShowInstallPrompt: Dispatch<SetStateAction<boolean>>;
+  onDismiss: () => void;
 }
 
 function InstallPrompt({
   showInstallPrompt,
   handleInstallApp,
-  setShowInstallPrompt,
+  onDismiss,
 }: InstallPromptProps) {
   const { i18n } = useTranslation();
 
@@ -36,9 +35,21 @@ function InstallPrompt({
             }}
           >
             {i18n.language === 'tr'
-              ? 'Bildirimler ve çevrimdışı kullanım için uygulamayı yükleyin'
-              : 'Install app for reminders & offline use'}
+              ? 'Uygulamayı yüklemek ister misiniz?'
+              : 'Would you like to install the app?'}
           </strong>
+          <span
+            style={{
+              display: 'block',
+              fontSize: '0.9rem',
+              opacity: 0.8,
+              lineHeight: 1.5,
+            }}
+          >
+            {i18n.language === 'tr'
+              ? 'Bildirimler ve çevrimdışı kullanım için önerilir.'
+              : 'Recommended for reminders and offline use.'}
+          </span>
         </div>
 
         <div
@@ -66,7 +77,7 @@ function InstallPrompt({
 
           <button
             type="button"
-            onClick={() => setShowInstallPrompt(false)}
+            onClick={onDismiss}
             style={{
               width: '100%',
               padding: '0.95rem 1rem',
@@ -76,7 +87,7 @@ function InstallPrompt({
               color: 'var(--button-text)',
             }}
           >
-            {i18n.language === 'tr' ? 'Kapat' : 'Close'}
+            {i18n.language === 'tr' ? 'Hayır' : 'Not now'}
           </button>
         </div>
       </div>

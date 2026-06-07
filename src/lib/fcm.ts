@@ -16,8 +16,7 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     return null;
   }
 
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return null;
+  if (Notification.permission !== 'granted') return null;
 
   const registration = await navigator.serviceWorker.ready;
 

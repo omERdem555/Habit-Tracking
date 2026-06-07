@@ -38,6 +38,7 @@ import { initFCMForUser } from './lib/fcm';
 
 /* constants */
 const HABIT_COLOR = '#60a5fa';
+const INSTALL_DISMISSED_KEY = 'habit-tracker-pwa-install-dismissed';
 
 /* ================= APP ================= */
 
@@ -98,19 +99,27 @@ function App() {
 
   /* PWA install prompt */
   useEffect(() => {
-    const isMobile = window.innerWidth <= 768;
-    //if (!isMobile || isStandalone) return;
+    if (isStandalone) return;
+
+    const dismissed =
+      localStorage.getItem(INSTALL_DISMISSED_KEY) === '1';
 
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPromptEvent(e);
-      setShowInstallPrompt(true);
+      if (!dismissed) {
+        setShowInstallPrompt(true);
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handler);
 
+    if (!dismissed) {
+      setShowInstallPrompt(true);
+    }
+
     return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  }, [isStandalone]);
 
   /* Firebase Cloud Messaging token retrieval */
 
@@ -161,6 +170,9 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
+    if (!state.notificationSettings.enabled) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
 
     const initFCM = async () => {
       try {
@@ -362,14 +374,36 @@ function App() {
     });
   };
 
+  const handleDismissInstall = () => {
+    try {
+      localStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+    } catch {
+      // ignore
+    }
+    setShowInstallPrompt(false);
+  };
+
   const handleInstallApp = async () => {
-    if (!installPromptEvent) return;
+    if (!installPromptEvent) {
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+      alert(
+        isIOS
+          ? i18n.language === 'tr'
+            ? 'Safari\'de Paylaş düğmesine dokunun, ardından "Ana Ekrana Ekle"yi seçin.'
+            : 'In Safari, tap Share, then choose "Add to Home Screen".'
+          : i18n.language === 'tr'
+            ? 'Tarayıcı menüsünden "Uygulamayı yükle" veya "Ana ekrana ekle" seçeneğini kullanın.'
+            : 'Use your browser menu to install the app or add it to your home screen.',
+      );
+      return;
+    }
 
     (installPromptEvent as any).prompt();
     const res = await (installPromptEvent as any).userChoice;
 
     if (res.outcome === 'accepted') {
-      setShowInstallPrompt(false);
+      handleDismissInstall();
     }
 
     setInstallPromptEvent(null);
@@ -378,46 +412,19 @@ function App() {
 
 
 
-  const handleSaveSettings = async () => {
-    if (!('Notification' in window)) {
-      setSettingsOpen(false);
-      return;
+  const handleSaveSettings = () => {
+    if ('Notification' in window) {
+      dispatch({
+        type: 'updateNotificationSettings',
+        payload: {
+          ...state.notificationSettings,
+          permissionStatus: Notification.permission,
+          enabled:
+            state.notificationSettings.enabled &&
+            Notification.permission === 'granted',
+        },
+      });
     }
-
-    let currentPermission = Notification.permission;
-
-    if (state.notificationSettings.enabled && currentPermission === 'default') {
-      currentPermission = await Notification.requestPermission();
-
-      if (currentPermission !== 'granted') {
-        dispatch({
-          type: 'updateNotificationSettings',
-          payload: {
-            ...state.notificationSettings,
-            enabled: false,
-            permissionStatus: currentPermission,
-          },
-        });
-
-        alert(
-          i18n.language === 'tr'
-            ? 'Bildirim izni verilmedi.'
-            : 'Notification permission denied.'
-        );
-
-        return;
-      }
-    }
-
-    dispatch({
-      type: 'updateNotificationSettings',
-      payload: {
-        ...state.notificationSettings,
-        permissionStatus: currentPermission,
-        enabled:
-          state.notificationSettings.enabled && currentPermission === 'granted',
-      },
-    });
 
     setSettingsOpen(false);
   };
@@ -458,7 +465,7 @@ function App() {
       <InstallPrompt
         showInstallPrompt={showInstallPrompt}
         handleInstallApp={handleInstallApp}
-        setShowInstallPrompt={setShowInstallPrompt}
+        onDismiss={handleDismissInstall}
       />
 
       <SummaryCards
