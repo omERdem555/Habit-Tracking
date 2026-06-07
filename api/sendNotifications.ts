@@ -131,12 +131,12 @@ function buildReminderMessage(
 
   if (missedYesterday.length > 0) {
     return language === 'tr'
-      ? `DÃ¼n dÃ¼nde kaldÄ±. BugÃ¼n yeniden baÅŸla: ${names(missedYesterday)}`
+      ? `Dün dünde kaldı. Bugün yeniden başla: ${names(missedYesterday)}`
       : `Yesterday is gone. Restart today: ${names(missedYesterday)}`;
   }
 
   return language === 'tr'
-    ? `BugÃ¼n ÅŸunlarÄ± tamamlamak ister misin: ${names(missing)}`
+    ? `Bugün şu görevleri tamamlamak ister misin: ${names(missing)}`
     : `Do you want to complete: ${names(missing)}?`;
 }
 

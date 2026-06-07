@@ -118,19 +118,31 @@ export function buildReminderMessage(
   missing: Habit[],
   missedYesterday: Habit[],
 ): string {
-  const names = (arr: Habit[]) =>
-    arr
-      .slice(0, 3)
-      .map((h) => h.name)
-      .join(', ');
+  const names = (arr: Habit[]) => arr.slice(0, 3).map((h) => h.name).join(', ');
+
+  const parts: string[] = [];
 
   if (missedYesterday.length > 0) {
-    return language === 'tr'
-      ? `Dün dünde kaldı. Bugün yeniden başla: ${names(missedYesterday)}`
-      : `Yesterday is gone. Restart today: ${names(missedYesterday)}`;
+    parts.push(
+      language === 'tr'
+        ? `Dün kaçırdıkların: ${names(missedYesterday)}`
+        : `Missed yesterday: ${names(missedYesterday)}`,
+    );
   }
 
-  return language === 'tr'
-    ? `Bugün şunları tamamlamak ister misin: ${names(missing)}`
-    : `Do you want to complete: ${names(missing)}?`;
+  if (missing.length > 0) {
+    parts.push(
+      language === 'tr'
+        ? `Bugün tamamlayabileceklerin: ${names(missing)}`
+        : `Missing today: ${names(missing)}`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return language === 'tr'
+      ? 'Bugün için bekleyen görev yok.'
+      : 'No pending habits for today.';
+  }
+
+  return parts.join(' | ');
 }
