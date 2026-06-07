@@ -37,7 +37,8 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       },
     } as any;
 
-    const resp = await admin.messaging().sendMulticast(message);
+    const messaging = admin.messaging() as any;
+    const resp = await messaging.sendMulticast(message);
     return res.status(200).json({ successCount: resp.successCount, failureCount: resp.failureCount });
   } catch (e) {
     console.error(e);

@@ -721,7 +721,8 @@ header h1 {
 }
 
 .settings-save-btn,
-.modal-close-btn {
+.modal-close-btn,
+.settings-logout-btn {
   border: 1px solid var(--button-border);
   background: var(--button-bg);
   color: var(--button-text);
@@ -733,7 +734,8 @@ header h1 {
 }
 
 .settings-save-btn:hover,
-.modal-close-btn:hover {
+.modal-close-btn:hover,
+.settings-logout-btn:hover {
   transform: translateY(-1px);
   background-color: rgba(96, 165, 250, 0.18);
 }

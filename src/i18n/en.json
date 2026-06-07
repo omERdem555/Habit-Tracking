@@ -29,6 +29,7 @@
     "renameHabit": "Rename habit",
     "habitNamePlaceholder": "Habit name",
     "save": "Save",
+    "logout": "Logout",
     "light": "Light",
     "dark": "Dark",
     "hoursSpent": "Hours spent (optional)",

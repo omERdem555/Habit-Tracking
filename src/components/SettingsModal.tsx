@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AppState } from '../types';
+import { signOut } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 
 interface SettingsModalProps {
   settingsOpen: boolean;
@@ -298,6 +300,25 @@ function SettingsModal({
               {i18n.language === 'tr'
                 ? 'Test Bildirimi Gönder'
                 : 'Send Test Notification'}
+            </button>
+            <button
+              type="button"
+              className="settings-logout-btn"
+              onClick={async () => {
+                try {
+                  await signOut(auth);
+                  setSettingsOpen(false);
+                } catch (error) {
+                  console.error('Logout failed', error);
+                  alert(
+                    i18n.language === 'tr'
+                      ? 'Çıkış yapılamadı. Lütfen tekrar deneyin.'
+                      : 'Logout failed. Please try again.',
+                  );
+                }
+              }}
+            >
+              {t('logout')}
             </button>
           </div>
         </div>
