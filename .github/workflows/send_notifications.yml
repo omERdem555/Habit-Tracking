@@ -3,12 +3,17 @@ name: send-notifications
 on:
   schedule:
     - cron: '*/15 * * * *'
+  workflow_dispatch:
 
 jobs:
   call:
     runs-on: ubuntu-latest
     steps:
       - name: Call notifications endpoint
-        run: |
-          curl -X POST -H "x-cron-secret: ${{ secrets.SCHEDULE_SECRET }}" \
-            https://habit-tracking-iota.vercel.app/api/sendNotifications
+        env:
+          NOTIFICATION_API_URL: https://habit-tracking-iota.vercel.app/api/sendNotifications
+          SCHEDULE_SECRET: ${{ secrets.SCHEDULE_SECRET }}
+        run: >
+          curl -fsS -X POST
+          -H "x-cron-secret: ${SCHEDULE_SECRET}"
+          "${NOTIFICATION_API_URL}"
