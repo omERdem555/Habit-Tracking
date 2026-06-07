@@ -15,7 +15,20 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     navigator.serviceWorker
       .register(swUrl)
       .then((registration) => {
-        registration.update();
+        const checkForUpdates = () => registration.update().catch(() => {});
+
+        checkForUpdates();
+
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) checkForUpdates();
+        });
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
       })
       .catch((err) => {
         console.error('SW registration failed', err);

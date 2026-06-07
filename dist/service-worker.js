@@ -22,24 +22,15 @@ messaging.onBackgroundMessage((payload) => {
       body: payload.notification?.body || '',
       icon: '/icon192.png',
       badge: '/icon192.png',
-    }
+    },
   );
 });
 
+const CACHE_VERSION = 'v7';
+const STATIC_CACHE = `habit-tracker-static-${CACHE_VERSION}`;
+const OFFLINE_CACHE = `habit-tracker-offline-${CACHE_VERSION}`;
 
-
-
-
-
-
-
-//Önceki SW
-
-const CACHE_VERSION = 'v6';
-const RUNTIME_CACHE = `habit-tracker-runtime-${CACHE_VERSION}`;
-
-const PRECACHE_URLS = [
-  '/',
+const STATIC_ASSETS = [
   './manifest.json',
   './icon72.png',
   './icon96.png',
@@ -47,9 +38,58 @@ const PRECACHE_URLS = [
   './icon512.png',
 ];
 
+const isSameOrigin = (url) => url.origin === self.location.origin;
+
+const isNavigationRequest = (request) =>
+  request.mode === 'navigate' || request.destination === 'document';
+
+const isHashedBundle = (url) => /\/assets\/.*\.(js|css)$/i.test(url.pathname);
+
+const isStaticAsset = (url) =>
+  STATIC_ASSETS.some((asset) => url.pathname.endsWith(asset.replace('./', '')));
+
+async function networkFirst(request, { cacheOffline = false } = {}) {
+  try {
+    const response = await fetch(request);
+
+    if (cacheOffline && response.ok) {
+      const cache = await caches.open(OFFLINE_CACHE);
+      cache.put(request, response.clone());
+    }
+
+    return response;
+  } catch {
+    const cached =
+      (await caches.match(request)) ||
+      (cacheOffline ? await caches.match('./index.html') : null) ||
+      (cacheOffline ? await caches.match('/') : null);
+
+    if (cached) return cached;
+
+    return new Response('Offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+  }
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  const response = await fetch(request);
+
+  if (response.ok) {
+    const cache = await caches.open(STATIC_CACHE);
+    cache.put(request, response.clone());
+  }
+
+  return response;
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(RUNTIME_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)),
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)),
   );
   self.skipWaiting();
 });
@@ -59,7 +99,12 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith('habit-tracker-runtime-') && key !== RUNTIME_CACHE)
+          .filter(
+            (key) =>
+              key.startsWith('habit-tracker-') &&
+              key !== STATIC_CACHE &&
+              key !== OFFLINE_CACHE,
+          )
           .map((key) => caches.delete(key)),
       ),
     ),
@@ -70,14 +115,25 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request).catch(() => caches.match('/'))
-      );
-    }),
-  );
+  const url = new URL(event.request.url);
+  if (!isSameOrigin(url)) return;
+
+  if (isNavigationRequest(event.request)) {
+    event.respondWith(networkFirst(event.request, { cacheOffline: true }));
+    return;
+  }
+
+  if (isHashedBundle(url)) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (isStaticAsset(url)) {
+    event.respondWith(cacheFirst(event.request));
+    return;
+  }
+
+  event.respondWith(networkFirst(event.request));
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -111,6 +167,6 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-self.addEventListener('notificationclose', (event) => {
+self.addEventListener('notificationclose', () => {
   // could log analytics or cleanup if needed
 });
