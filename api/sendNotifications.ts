@@ -2,15 +2,143 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
-import {
-  buildReminderMessage,
-  getMissedYesterday,
-  getMissingToday,
-  intervalElapsed,
-  isWithinNotificationWindow,
-  type NotificationSettings,
-  type UserAppState,
-} from './lib/reminders';
+
+type Habit = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type Completion = {
+  habitId: string;
+  date: string;
+};
+
+type NotificationSettings = {
+  enabled: boolean;
+  intervalHours: number;
+  startHour: number;
+  endHour: number;
+};
+
+type UserAppState = {
+  habits: Habit[];
+  completions: Completion[];
+  notificationSettings: NotificationSettings;
+};
+
+function getLocalHour(timezone: string, now = new Date()): number {
+  const hour = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    hour12: false,
+  }).format(now);
+
+  return parseInt(hour, 10);
+}
+
+function getLocalDateString(timezone: string, now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+function getYesterdayLocalDate(timezone: string, now = new Date()): string {
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return getLocalDateString(timezone, yesterday);
+}
+
+function isWithinNotificationWindow(
+  settings: NotificationSettings,
+  timezone: string,
+  now = new Date(),
+): boolean {
+  const hour = getLocalHour(timezone, now);
+  return hour >= settings.startHour && hour <= settings.endHour;
+}
+
+type LastNotifiedValue =
+  | number
+  | { toMillis?: () => number }
+  | null
+  | undefined;
+
+function intervalElapsed(
+  lastNotified: LastNotifiedValue,
+  intervalHours: number,
+  now = new Date(),
+): boolean {
+  if (!lastNotified) return true;
+
+  const lastMs =
+    typeof lastNotified === 'number'
+      ? lastNotified
+      : typeof lastNotified.toMillis === 'function'
+        ? lastNotified.toMillis()
+        : 0;
+
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  return now.getTime() - lastMs >= intervalMs;
+}
+
+function getMissingToday(
+  habits: Habit[],
+  completions: Completion[],
+  timezone: string,
+  now = new Date(),
+): Habit[] {
+  const today = getLocalDateString(timezone, now);
+
+  const doneSet = new Set(
+    completions
+      .filter((c) => c.date.slice(0, 10) === today)
+      .map((c) => c.habitId),
+  );
+
+  return habits.filter((h) => h.active && !doneSet.has(h.id));
+}
+
+function getMissedYesterday(
+  habits: Habit[],
+  completions: Completion[],
+  timezone: string,
+  now = new Date(),
+): Habit[] {
+  const yesterday = getYesterdayLocalDate(timezone, now);
+
+  const doneSet = new Set(
+    completions
+      .filter((c) => c.date.slice(0, 10) === yesterday)
+      .map((c) => c.habitId),
+  );
+
+  return habits.filter((h) => h.active && !doneSet.has(h.id));
+}
+
+function buildReminderMessage(
+  language: string,
+  missing: Habit[],
+  missedYesterday: Habit[],
+): string {
+  const names = (arr: Habit[]) =>
+    arr
+      .slice(0, 3)
+      .map((h) => h.name)
+      .join(', ');
+
+  if (missedYesterday.length > 0) {
+    return language === 'tr'
+      ? `DÃ¼n dÃ¼nde kaldÄ±. BugÃ¼n yeniden baÅŸla: ${names(missedYesterday)}`
+      : `Yesterday is gone. Restart today: ${names(missedYesterday)}`;
+  }
+
+  return language === 'tr'
+    ? `BugÃ¼n ÅŸunlarÄ± tamamlamak ister misin: ${names(missing)}`
+    : `Do you want to complete: ${names(missing)}?`;
+}
 
 function initAdmin() {
   if (admin.apps.length) return;
