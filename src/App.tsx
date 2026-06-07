@@ -208,9 +208,6 @@ function App() {
 
         if (!token) return;
 
-        const storedToken = localStorage.getItem('fcm_token');
-        if (storedToken === token) return;
-
         localStorage.setItem('fcm_token', token);
       } catch (err) {
         console.error('FCM init failed:', err);
@@ -353,7 +350,9 @@ function App() {
 
   useNotifications({
     enabled:
-      state.notificationSettings.enabled && isNotificationGranted(),
+      !user &&
+      state.notificationSettings.enabled &&
+      isNotificationGranted(),
     settings: state.notificationSettings,
     habits: state.habits,
     completions: state.completions,
