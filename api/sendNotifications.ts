@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import admin from 'firebase-admin';
+import type { Firestore } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
 import {
   buildReminderMessage,
@@ -9,18 +10,36 @@ import {
   isWithinNotificationWindow,
   type NotificationSettings,
   type UserAppState,
-} from '../src/lib/reminders';
+} from './lib/reminders';
 
-if (!admin.apps.length) {
+function initAdmin() {
+  if (admin.apps.length) return;
+
   const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
-  admin.initializeApp({
-    credential: admin.credential.cert(svc ? JSON.parse(svc) : {} as any),
-    projectId: process.env.FIREBASE_PROJECT_ID,
-  });
-}
+  const projectId = process.env.FIREBASE_PROJECT_ID;
 
-const db = admin.firestore();
-const messaging = admin.messaging();
+  if (!svc) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT is not set');
+  }
+  if (!projectId) {
+    throw new Error('FIREBASE_PROJECT_ID is not set');
+  }
+
+  let serviceAccount: Record<string, unknown>;
+
+  try {
+    serviceAccount = JSON.parse(svc) as Record<string, unknown>;
+  } catch (error) {
+    console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT', error);
+    throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT JSON');
+  }
+
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount as any),
+    projectId,
+  });
+  console.info('Firebase admin initialized', { projectId });
+}
 
 function isAuthorized(req: VercelRequest): boolean {
   const secret = process.env.SCHEDULE_SECRET || process.env.CRON_SECRET;
@@ -37,7 +56,10 @@ function isAuthorized(req: VercelRequest): boolean {
 
 const userStateCache = new Map<string, UserAppState | null>();
 
-async function loadUserState(userId: string): Promise<UserAppState | null> {
+async function loadUserState(
+  db: Firestore,
+  userId: string,
+): Promise<UserAppState | null> {
   if (userStateCache.has(userId)) {
     return userStateCache.get(userId) ?? null;
   }
@@ -74,8 +96,16 @@ export default async (req: VercelRequest, res: VercelResponse) => {
   }
 
   try {
+    initAdmin();
+
+    const db = admin.firestore();
+    const messaging = admin.messaging();
     const now = new Date();
     const devicesSnap = await db.collection('devices').get();
+    console.info('sendNotifications start', {
+      devices: devicesSnap.size,
+      timestamp: now.toISOString(),
+    });
 
     const messages: admin.messaging.Message[] = [];
     const pendingUpdates: Array<{
@@ -90,7 +120,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       if (!token || !userId) continue;
 
-      const userState = await loadUserState(userId);
+      const userState = await loadUserState(db, userId);
       if (!userState) continue;
 
       const settings: NotificationSettings =
@@ -139,11 +169,22 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       });
     }
 
+    console.info('sendNotifications prepared', {
+      messages: messages.length,
+      pendingUpdates: pendingUpdates.length,
+    });
+
     if (!messages.length) {
       return res.status(200).json({ sent: 0, skipped: devicesSnap.size });
     }
 
-    const response = await messaging.sendEach(messages);
+    let response;
+    try {
+      response = await messaging.sendEach(messages);
+    } catch (error) {
+      console.error('messaging.sendEach failed', error);
+      throw error;
+    }
 
     let successCount = 0;
     let failureCount = 0;
@@ -166,6 +207,11 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       failureCount += 1;
 
       const code = result.error?.code;
+      console.warn('FCM send failure', {
+        index: i,
+        code,
+        message: result.error?.message,
+      });
       if (
         code === 'messaging/registration-token-not-registered' ||
         code === 'messaging/invalid-registration-token'
@@ -180,7 +226,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       evaluated: devicesSnap.size,
     });
   } catch (e) {
-    console.error(e);
+    console.error('sendNotifications failed', e);
     return res.status(500).json({ error: 'server_error' });
   }
 };
