@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import admin from 'firebase-admin';
-import type { Firestore, DocumentReference } from 'firebase-admin/firestore';
+import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
 
 type Habit = {
   id: string;
@@ -59,11 +59,7 @@ function isWithinNotificationWindow(
   return hour >= settings.startHour && hour <= settings.endHour;
 }
 
-type LastNotifiedValue =
-  | number
-  | { toMillis?: () => number }
-  | null
-  | undefined;
+type LastNotifiedValue = number | { toMillis?: () => number } | null | undefined;
 
 function intervalElapsed(
   lastNotified: LastNotifiedValue,
@@ -128,7 +124,7 @@ function buildReminderMessages(
   if (missedYesterday.length > 0) {
     messages.push(
       language === 'tr'
-        ? `Dün dünde kaldı. Bugün yeniden başla: ${names(missedYesterday)}`
+        ? `Dün nerede kaldıysan oradan devam et: ${names(missedYesterday)}`
         : `Yesterday is gone. Restart today: ${names(missedYesterday)}`,
     );
   }
@@ -185,10 +181,7 @@ function isAuthorized(req: VercelRequest): boolean {
 
 const userStateCache = new Map<string, UserAppState | null>();
 
-async function loadUserState(
-  db: Firestore,
-  userId: string,
-): Promise<UserAppState | null> {
+async function loadUserState(db: Firestore, userId: string): Promise<UserAppState | null> {
   if (userStateCache.has(userId)) {
     return userStateCache.get(userId) ?? null;
   }
@@ -237,8 +230,8 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       timestamp: now.toISOString(),
     });
 
-    const messages: admin.messaging.Message[] = [];
-    const pendingUpdates: Array<{
+    const queuedMessages: Array<{
+      message: admin.messaging.Message;
       ref: DocumentReference;
       sentAt: Date;
     }> = [];
@@ -264,9 +257,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       const language = (device.language as string | undefined) || 'tr';
 
       if (!isWithinNotificationWindow(settings, timezone, now)) continue;
-      if (!intervalElapsed(device.lastNotified, settings.intervalHours, now)) {
-        continue;
-      }
+      if (!intervalElapsed(device.lastNotified, settings.intervalHours, now)) continue;
 
       const habits = userState.habits ?? [];
       const completions = userState.completions ?? [];
@@ -278,53 +269,63 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       for (const body of bodies) {
         const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
-        messages.push({
-          token,
-          notification: { title, body },
-          webpush: {
-            fcmOptions: { link: '/' },
+        queuedMessages.push({
+          message: {
+            token,
+            notification: { title, body },
+            webpush: {
+              fcmOptions: { link: '/' },
+            },
           },
+          ref: deviceDoc.ref,
+          sentAt: now,
         });
       }
-
-      pendingUpdates.push({
-        ref: deviceDoc.ref,
-        sentAt: now,
-      });
     }
 
     console.info('sendNotifications prepared', {
-      messages: messages.length,
-      pendingUpdates: pendingUpdates.length,
+      messages: queuedMessages.length,
+      devices: devicesSnap.size,
     });
 
-    if (!messages.length) {
+    if (!queuedMessages.length) {
       return res.status(200).json({ sent: 0, skipped: devicesSnap.size });
     }
 
     let response;
     try {
-      response = await messaging.sendEach(messages);
+      response = await messaging.sendEach(queuedMessages.map((entry) => entry.message));
     } catch (error) {
       console.error('messaging.sendEach failed', error);
       throw error;
     }
 
+    const updatedRefs = new Set<string>();
     let successCount = 0;
     let failureCount = 0;
 
     for (let i = 0; i < response.responses.length; i++) {
       const result = response.responses[i];
-      const update = pendingUpdates[i];
+      const update = queuedMessages[i];
+
+      if (!update) {
+        failureCount += 1;
+        console.warn('Missing queued message metadata for FCM response', { index: i });
+        continue;
+      }
 
       if (result.success) {
         successCount += 1;
-        await update.ref.set(
-          {
-            lastNotified: admin.firestore.Timestamp.fromDate(update.sentAt),
-          },
-          { merge: true },
-        );
+
+        if (!updatedRefs.has(update.ref.path)) {
+          updatedRefs.add(update.ref.path);
+          await update.ref.set(
+            {
+              lastNotified: admin.firestore.Timestamp.fromDate(update.sentAt),
+            },
+            { merge: true },
+          );
+        }
         continue;
       }
 
@@ -336,6 +337,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
         code,
         message: result.error?.message,
       });
+
       if (
         code === 'messaging/registration-token-not-registered' ||
         code === 'messaging/invalid-registration-token'

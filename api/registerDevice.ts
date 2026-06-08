@@ -33,6 +33,8 @@ function initAdmin() {
 export default async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== 'POST') return res.status(405).end();
 
+  initAdmin();
+
   // Verify Firebase ID token if provided
   const authHeader = req.headers.authorization || req.headers.Authorization;
   let uidFromToken: string | null = null;
@@ -55,7 +57,6 @@ export default async (req: VercelRequest, res: VercelResponse) => {
   }
 
   try {
-    initAdmin();
     const db = admin.firestore();
 
     await db.collection('devices').doc(token).set({
