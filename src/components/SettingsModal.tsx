@@ -69,8 +69,12 @@ function SettingsModal({
   const handleSendTestNotification = () => {
     if (!('Notification' in window)) return;
 
+    console.info('[TEST NOTIF] click');
+
     requestNotificationPermission().then(async (permission) => {
       const granted = permission === 'granted';
+
+      console.info('[TEST NOTIF] permission result', { permission, granted });
 
       dispatch({
         type: 'updateNotificationSettings',
@@ -92,18 +96,33 @@ function SettingsModal({
 
       try {
         const registration = await ensureServiceWorkerReady();
+        console.info('[TEST NOTIF] sw ready', {
+          scope: registration?.scope ?? null,
+          activeScript: registration?.active?.scriptURL ?? null,
+        });
 
-        if (registration?.showNotification) {
-          await registration.showNotification(title, {
-            body,
-            icon: '/icon192.png',
-            badge: '/icon192.png',
-          });
-        } else {
+        try {
           new Notification(title, {
             body,
             icon: '/icon192.png',
           });
+          console.info('[TEST NOTIF] shown via Notification constructor');
+        } catch (error) {
+          console.warn(
+            '[TEST NOTIF] Notification constructor failed, falling back to SW showNotification',
+            error,
+          );
+
+          if (registration?.showNotification) {
+            await registration.showNotification(title, {
+              body,
+              icon: '/icon192.png',
+              badge: '/icon192.png',
+            });
+            console.info('[TEST NOTIF] shown via service worker registration');
+          } else {
+            throw new Error('No notification display method available.');
+          }
         }
       } catch (error) {
         console.error('Test notification failed', error);
