@@ -25,7 +25,16 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data.json();
   } catch (error) {
-    console.log('[SW] push payload is not JSON', error);
+    console.log('[SW] push payload is not JSON, falling back to text', error);
+    const text = event.data.text();
+    event.waitUntil(
+      self.registration.showNotification('Habit Tracker', {
+        body: text,
+        icon: '/icon192.png',
+        badge: '/icon192.png',
+        data: { raw: text },
+      }),
+    );
     return;
   }
 
