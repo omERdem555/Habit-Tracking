@@ -26,6 +26,15 @@ type UserAppState = {
   notificationSettings: NotificationSettings;
 };
 
+type SkipReason =
+  | 'missing_token'
+  | 'missing_user'
+  | 'missing_user_state'
+  | 'notifications_disabled'
+  | 'outside_window'
+  | 'interval_not_elapsed'
+  | 'no_pending_messages';
+
 function getLocalHour(timezone: string, now = new Date()): number {
   const hour = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -86,7 +95,6 @@ function getMissingToday(
   now = new Date(),
 ): Habit[] {
   const today = getLocalDateString(timezone, now);
-
   const doneSet = new Set(
     completions
       .filter((c) => c.date.slice(0, 10) === today)
@@ -103,7 +111,6 @@ function getMissedYesterday(
   now = new Date(),
 ): Habit[] {
   const yesterday = getYesterdayLocalDate(timezone, now);
-
   const doneSet = new Set(
     completions
       .filter((c) => c.date.slice(0, 10) === yesterday)
@@ -146,15 +153,10 @@ function initAdmin() {
   const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId = process.env.FIREBASE_PROJECT_ID;
 
-  if (!svc) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT is not set');
-  }
-  if (!projectId) {
-    throw new Error('FIREBASE_PROJECT_ID is not set');
-  }
+  if (!svc) throw new Error('FIREBASE_SERVICE_ACCOUNT is not set');
+  if (!projectId) throw new Error('FIREBASE_PROJECT_ID is not set');
 
   let serviceAccount: Record<string, unknown>;
-
   try {
     serviceAccount = JSON.parse(svc) as Record<string, unknown>;
   } catch (error) {
@@ -209,10 +211,15 @@ async function loadUserState(db: Firestore, userId: string): Promise<UserAppStat
   return state;
 }
 
+function logSkip(deviceId: string, reason: SkipReason, extra?: Record<string, unknown>) {
+  console.info('sendNotifications skip', { deviceId, reason, ...extra });
+}
+
 export default async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).end();
   }
+
   if (!isAuthorized(req)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
@@ -225,39 +232,101 @@ export default async (req: VercelRequest, res: VercelResponse) => {
     const now = new Date();
     const devicesSnap = await db.collection('devices').get();
 
+    const summary = {
+      evaluated: devicesSnap.size,
+      prepared: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+    };
+
     console.info('sendNotifications start', {
-      devices: devicesSnap.size,
       timestamp: now.toISOString(),
+      evaluated: summary.evaluated,
     });
 
     const queuedMessages: Array<{
       message: admin.messaging.Message;
       ref: DocumentReference;
       sentAt: Date;
+      deviceId: string;
+      tokenPreview: string;
+      skipContext?: {
+        timezone: string;
+        language: string;
+        intervalHours: number;
+      };
     }> = [];
 
     for (const deviceDoc of devicesSnap.docs) {
       const device = deviceDoc.data();
       const token = device.token as string | undefined;
       const userId = device.userId as string | undefined;
+      const timezone = (device.timezone as string | undefined) || 'UTC';
+      const language = (device.language as string | undefined) || 'tr';
 
-      if (!token || !userId) continue;
+      if (!token) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'missing_token');
+        continue;
+      }
+
+      if (!userId) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'missing_user', { tokenPreview: token.slice(0, 12) });
+        continue;
+      }
 
       const userState = await loadUserState(db, userId);
-      if (!userState) continue;
+      if (!userState) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'missing_user_state', {
+          userId,
+          tokenPreview: token.slice(0, 12),
+        });
+        continue;
+      }
 
       const settings: NotificationSettings =
         userState.notificationSettings ??
         device.notificationSettings ??
         { enabled: false, intervalHours: 2, startHour: 9, endHour: 21 };
 
-      if (!settings.enabled) continue;
+      if (!settings.enabled) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'notifications_disabled', {
+          userId,
+          tokenPreview: token.slice(0, 12),
+        });
+        continue;
+      }
 
-      const timezone = (device.timezone as string | undefined) || 'UTC';
-      const language = (device.language as string | undefined) || 'tr';
+      const windowOpen = isWithinNotificationWindow(settings, timezone, now);
+      if (!windowOpen) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'outside_window', {
+          userId,
+          timezone,
+          currentHour: getLocalHour(timezone, now),
+          startHour: settings.startHour,
+          endHour: settings.endHour,
+          tokenPreview: token.slice(0, 12),
+        });
+        continue;
+      }
 
-      if (!isWithinNotificationWindow(settings, timezone, now)) continue;
-      if (!intervalElapsed(device.lastNotified, settings.intervalHours, now)) continue;
+      const intervalOk = intervalElapsed(device.lastNotified, settings.intervalHours, now);
+      if (!intervalOk) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'interval_not_elapsed', {
+          userId,
+          timezone,
+          intervalHours: settings.intervalHours,
+          lastNotified: device.lastNotified?.toDate?.()?.toISOString?.() ?? device.lastNotified ?? null,
+          tokenPreview: token.slice(0, 12),
+        });
+        continue;
+      }
 
       const habits = userState.habits ?? [];
       const completions = userState.completions ?? [];
@@ -265,7 +334,27 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       const missing = getMissingToday(habits, completions, timezone, now);
       const bodies = buildReminderMessages(language, missing, missedYesterday);
 
-      if (bodies.length === 0) continue;
+      if (bodies.length === 0) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'no_pending_messages', {
+          userId,
+          timezone,
+          tokenPreview: token.slice(0, 12),
+        });
+        continue;
+      }
+
+      console.info('sendNotifications prepared device', {
+        deviceId: deviceDoc.id,
+        userId,
+        timezone,
+        language,
+        bodies: bodies.length,
+        intervalHours: settings.intervalHours,
+        startHour: settings.startHour,
+        endHour: settings.endHour,
+        tokenPreview: token.slice(0, 12),
+      });
 
       for (const body of bodies) {
         const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
@@ -279,43 +368,47 @@ export default async (req: VercelRequest, res: VercelResponse) => {
           },
           ref: deviceDoc.ref,
           sentAt: now,
+          deviceId: deviceDoc.id,
+          tokenPreview: token.slice(0, 12),
+          skipContext: {
+            timezone,
+            language,
+            intervalHours: settings.intervalHours,
+          },
         });
       }
     }
 
-    console.info('sendNotifications prepared', {
-      messages: queuedMessages.length,
-      devices: devicesSnap.size,
+    summary.prepared = queuedMessages.length;
+
+    console.info('sendNotifications prepared summary', {
+      ...summary,
+      queuedDevices: new Set(queuedMessages.map((entry) => entry.deviceId)).size,
     });
 
     if (!queuedMessages.length) {
-      return res.status(200).json({ sent: 0, skipped: devicesSnap.size });
-    }
-
-    let response;
-    try {
-      response = await messaging.sendEach(queuedMessages.map((entry) => entry.message));
-    } catch (error) {
-      console.error('messaging.sendEach failed', error);
-      throw error;
+      return res.status(200).json({
+        ok: true,
+        ...summary,
+        queuedDevices: 0,
+        message: 'No notifications prepared.',
+      });
     }
 
     const updatedRefs = new Set<string>();
-    let successCount = 0;
-    let failureCount = 0;
 
-    for (let i = 0; i < response.responses.length; i++) {
-      const result = response.responses[i];
+    for (let i = 0; i < queuedMessages.length; i++) {
       const update = queuedMessages[i];
 
-      if (!update) {
-        failureCount += 1;
-        console.warn('Missing queued message metadata for FCM response', { index: i });
-        continue;
-      }
-
-      if (result.success) {
-        successCount += 1;
+      try {
+        const messageId = await messaging.send(update.message);
+        summary.sent += 1;
+        console.info('FCM send success', {
+          index: i,
+          messageId,
+          deviceId: update.deviceId,
+          tokenPreview: update.tokenPreview,
+        });
 
         if (!updatedRefs.has(update.ref.path)) {
           updatedRefs.add(update.ref.path);
@@ -326,30 +419,37 @@ export default async (req: VercelRequest, res: VercelResponse) => {
             { merge: true },
           );
         }
-        continue;
-      }
+      } catch (error) {
+        summary.failed += 1;
+        const err = error as { code?: string; message?: string };
+        console.warn('FCM send failure', {
+          index: i,
+          code: err.code,
+          message: err.message,
+          deviceId: update.deviceId,
+          tokenPreview: update.tokenPreview,
+          skipContext: update.skipContext,
+        });
 
-      failureCount += 1;
-
-      const code = result.error?.code;
-      console.warn('FCM send failure', {
-        index: i,
-        code,
-        message: result.error?.message,
-      });
-
-      if (
-        code === 'messaging/registration-token-not-registered' ||
-        code === 'messaging/invalid-registration-token'
-      ) {
-        await update.ref.delete().catch(() => {});
+        if (
+          err.code === 'messaging/registration-token-not-registered' ||
+          err.code === 'messaging/invalid-registration-token'
+        ) {
+          await update.ref.delete().catch(() => {});
+          console.info('Deleted invalid device token', {
+            deviceId: update.deviceId,
+            tokenPreview: update.tokenPreview,
+          });
+        }
       }
     }
 
+    console.info('sendNotifications completed', summary);
+
     return res.status(200).json({
-      sent: successCount,
-      failed: failureCount,
-      evaluated: devicesSnap.size,
+      ok: true,
+      ...summary,
+      queuedDevices: new Set(queuedMessages.map((entry) => entry.deviceId)).size,
     });
   } catch (e) {
     console.error('sendNotifications failed', e);
