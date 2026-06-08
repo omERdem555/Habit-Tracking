@@ -21,6 +21,9 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
 
   const registration = await ensureServiceWorkerReady();
   if (!registration) return null;
+  if (!registration.pushManager) {
+    throw new Error('Service worker registration is not push-enabled on this browser.');
+  }
 
   const token = await getToken(messaging, {
     vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,

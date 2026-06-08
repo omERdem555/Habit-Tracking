@@ -6,15 +6,12 @@ export async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistrat
   if (!('serviceWorker' in navigator)) return null;
 
   const swUrl = getServiceWorkerUrl();
-  let registration = await navigator.serviceWorker.getRegistration();
-
-  if (!registration) {
-    registration = await navigator.serviceWorker.register(swUrl);
-  }
+  const existing = await navigator.serviceWorker.getRegistration(swUrl);
+  const registration = existing ?? await navigator.serviceWorker.register(swUrl);
 
   if (!registration.active) {
     await new Promise<void>((resolve) => {
-      const worker = registration!.installing || registration!.waiting;
+      const worker = registration.installing || registration.waiting;
 
       if (!worker) {
         resolve();
@@ -32,7 +29,8 @@ export async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistrat
     });
   }
 
-  return navigator.serviceWorker.ready;
+  await navigator.serviceWorker.ready;
+  return registration;
 }
 
 export function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
