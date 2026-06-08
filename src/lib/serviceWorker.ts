@@ -6,8 +6,22 @@ export async function ensureServiceWorkerReady(): Promise<ServiceWorkerRegistrat
   if (!('serviceWorker' in navigator)) return null;
 
   const swUrl = getServiceWorkerUrl();
-  const existing = await navigator.serviceWorker.getRegistration(swUrl);
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  const existing =
+    registrations.find((registration) =>
+      registration.active?.scriptURL.includes('/service-worker.js') ||
+      registration.waiting?.scriptURL.includes('/service-worker.js') ||
+      registration.installing?.scriptURL.includes('/service-worker.js'),
+    ) ?? null;
+
   const registration = existing ?? await navigator.serviceWorker.register(swUrl);
+
+  console.info('[SW] registration ready', {
+    scope: registration.scope,
+    activeScript: registration.active?.scriptURL ?? null,
+    waitingScript: registration.waiting?.scriptURL ?? null,
+    installingScript: registration.installing?.scriptURL ?? null,
+  });
 
   if (!registration.active) {
     await new Promise<void>((resolve) => {

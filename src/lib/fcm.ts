@@ -4,8 +4,17 @@ import { ensureServiceWorkerReady } from './serviceWorker';
 import { isNotificationGranted } from './notifications';
 
 export const initFCMForUser = async (userId: string, i18n: any, notificationSettings: any) => {
+  console.info('[FCM] init start', {
+    userId,
+    language: i18n?.language,
+    enabled: notificationSettings?.enabled,
+  });
+
   if (!('serviceWorker' in navigator)) return null;
-  if (!isNotificationGranted()) return null;
+  if (!isNotificationGranted()) {
+    console.info('[FCM] aborted: notification permission not granted');
+    return null;
+  }
 
   const functionUrl = import.meta.env.VITE_FIREBASE_FUNCTION_URL?.trim();
   if (
@@ -19,21 +28,43 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     return null;
   }
 
+  console.info('[FCM] backend configured', { functionUrl });
+
   const registration = await ensureServiceWorkerReady();
-  if (!registration) return null;
+  if (!registration) {
+    console.info('[FCM] aborted: no service worker registration');
+    return null;
+  }
   if (!registration.pushManager) {
+    console.error('[FCM] registration missing pushManager', {
+      scope: registration.scope,
+      activeScript: registration.active?.scriptURL ?? null,
+    });
     throw new Error('Service worker registration is not push-enabled on this browser.');
   }
+
+  console.info('[FCM] requesting token', {
+    scope: registration.scope,
+    activeScript: registration.active?.scriptURL ?? null,
+  });
 
   const token = await getToken(messaging, {
     vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
     serviceWorkerRegistration: registration,
   });
 
+  console.info('[FCM] token obtained', {
+    hasToken: Boolean(token),
+    tokenPreview: token ? `${token.slice(0, 12)}...` : null,
+  });
+
   try {
     const idToken = await auth.currentUser?.getIdToken?.();
+    console.info('[FCM] registering device', {
+      hasAuthToken: Boolean(idToken),
+    });
 
-    await fetch(`${functionUrl}/registerDevice`, {
+    const response = await fetch(`${functionUrl}/registerDevice`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -47,6 +78,11 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
         language: i18n.language,
         notificationSettings,
       }),
+    });
+
+    console.info('[FCM] registerDevice response', {
+      status: response.status,
+      ok: response.ok,
     });
   } catch (error) {
     console.error('Failed to register device for FCM', error);
