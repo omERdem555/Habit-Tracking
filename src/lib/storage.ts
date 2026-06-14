@@ -79,6 +79,7 @@ export function loadState(uid?: string): AppState {
         ...defaultState,
         habits: parsed?.habits ?? [],
         completions: [],
+        deviceId: parsed?.deviceId ?? localStorage.getItem('habit-tracker-device-id') ?? undefined,
       };
     }
 
@@ -89,6 +90,7 @@ export function loadState(uid?: string): AppState {
         ? normalizeCompletions(parsed.completions)
         : [],
       notificationSettings: parsed.notificationSettings ?? defaultState.notificationSettings,
+      deviceId: parsed.deviceId ?? localStorage.getItem('habit-tracker-device-id') ?? undefined,
     };
   } catch {
     return defaultState;

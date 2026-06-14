@@ -103,13 +103,21 @@ function getMissingToday(
   now = new Date(),
 ): Habit[] {
   const today = getLocalDateString(timezone, now);
-  const doneSet = new Set(
+  const yesterday = getYesterdayLocalDate(timezone, now);
+
+  const doneTodaySet = new Set(
     completions
       .filter((c) => c.date.slice(0, 10) === today)
       .map((c) => c.habitId),
   );
 
-  return habits.filter((h) => h.active && !doneSet.has(h.id));
+  const doneYesterdaySet = new Set(
+    completions
+      .filter((c) => c.date.slice(0, 10) === yesterday)
+      .map((c) => c.habitId),
+  );
+
+  return habits.filter((h) => h.active && !doneTodaySet.has(h.id) && doneYesterdaySet.has(h.id));
 }
 
 function getMissedYesterday(
@@ -118,14 +126,22 @@ function getMissedYesterday(
   timezone: string,
   now = new Date(),
 ): Habit[] {
+  const today = getLocalDateString(timezone, now);
   const yesterday = getYesterdayLocalDate(timezone, now);
-  const doneSet = new Set(
+
+  const doneTodaySet = new Set(
+    completions
+      .filter((c) => c.date.slice(0, 10) === today)
+      .map((c) => c.habitId),
+  );
+
+  const doneYesterdaySet = new Set(
     completions
       .filter((c) => c.date.slice(0, 10) === yesterday)
       .map((c) => c.habitId),
   );
 
-  return habits.filter((h) => h.active && !doneSet.has(h.id));
+  return habits.filter((h) => h.active && !doneYesterdaySet.has(h.id) && !doneTodaySet.has(h.id));
 }
 
 function buildReminderMessages(
@@ -266,6 +282,8 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       };
     }> = [];
 
+    const seenTokens = new Set<string>();
+
     for (const deviceDoc of devicesSnap.docs) {
       const device = deviceDoc.data();
       const token = device.token as string | undefined;
@@ -285,6 +303,13 @@ export default async (req: VercelRequest, res: VercelResponse) => {
         continue;
       }
 
+      if (seenTokens.has(token)) {
+        summary.skipped += 1;
+        logSkip(deviceDoc.id, 'duplicate_token' as any, { tokenPreview: token.slice(0, 12) });
+        continue;
+      }
+      seenTokens.add(token);
+
       const userState = await loadUserState(db, userId);
       if (!userState) {
         summary.skipped += 1;
@@ -297,7 +322,6 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       const settings: NotificationSettings =
         userState.notificationSettings ??
-        device.notificationSettings ??
         { enabled: false, intervalHours: 2, startHour: 9, endHour: 21 };
 
       if (!settings.enabled) {

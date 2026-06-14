@@ -25,12 +25,6 @@ export const registerDevice = onRequest(async (req, res) => {
       platform = "web",
       timezone,
       language = "tr",
-      notificationSettings = {
-        enabled: false,
-        startHour: 9,
-        endHour: 21,
-        intervalHours: 4,
-      },
     } = req.body;
 
     if (!token) {
@@ -41,7 +35,7 @@ export const registerDevice = onRequest(async (req, res) => {
     // deterministic device id (token hash substitute)
     const deviceId = Buffer.from(token).toString("base64url");
 
-    const deviceRef = db.collection("devices").doc(deviceId);
+    const deviceRef = userId ? db.collection("users").doc(userId).collection("devices").doc(deviceId) : db.collection("devices").doc(deviceId);
 
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -55,7 +49,7 @@ export const registerDevice = onRequest(async (req, res) => {
         platform,
         timezone: timezone ?? null,
         language,
-        notificationSettings,
+        notificationSettings: admin.firestore.FieldValue.delete(),
       });
     } else {
       await deviceRef.set({
@@ -66,7 +60,7 @@ export const registerDevice = onRequest(async (req, res) => {
         platform,
         timezone: timezone ?? null,
         language,
-        notificationSettings,
+        notificationSettings: admin.firestore.FieldValue.delete(),
       });
     }
 

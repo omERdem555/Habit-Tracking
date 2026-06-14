@@ -46,28 +46,48 @@ export default function useNotifications({
 
     const getMissingToday = () => {
       const today = localDateString();
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yd = y.toISOString().slice(0, 10);
 
-      const doneSet = new Set(
+      const doneTodaySet = new Set(
         completions
           .filter((c) => c.date.slice(0, 10) === today)
           .map((c) => c.habitId),
       );
 
-      return habits.filter((h) => h.active && !doneSet.has(h.id));
-    };
-
-    const getMissedYesterday = () => {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      const yd = y.toISOString().slice(0, 10);
-
-      const doneSet = new Set(
+      const doneYesterdaySet = new Set(
         completions
           .filter((c) => c.date.slice(0, 10) === yd)
           .map((c) => c.habitId),
       );
 
-      return habits.filter((h) => h.active && !doneSet.has(h.id));
+      return habits.filter(
+        (h) => h.active && !doneTodaySet.has(h.id) && doneYesterdaySet.has(h.id),
+      );
+    };
+
+    const getMissedYesterday = () => {
+      const today = localDateString();
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yd = y.toISOString().slice(0, 10);
+
+      const doneTodaySet = new Set(
+        completions
+          .filter((c) => c.date.slice(0, 10) === today)
+          .map((c) => c.habitId),
+      );
+
+      const doneYesterdaySet = new Set(
+        completions
+          .filter((c) => c.date.slice(0, 10) === yd)
+          .map((c) => c.habitId),
+      );
+
+      return habits.filter(
+        (h) => h.active && !doneYesterdaySet.has(h.id) && !doneTodaySet.has(h.id),
+      );
     };
 
     const tick = async () => {

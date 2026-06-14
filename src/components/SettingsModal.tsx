@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { AppState } from '../types';
 import { signOut } from 'firebase/auth';
+import { updateDeviceSettings } from '../lib/deviceSettings';
 import { auth } from '../lib/firebase';
 import {
   getLiveNotificationPermission,

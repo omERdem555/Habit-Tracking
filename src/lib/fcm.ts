@@ -10,10 +10,10 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     enabled: notificationSettings?.enabled,
   });
 
-  if (!('serviceWorker' in navigator)) return null;
+  if (!('serviceWorker' in navigator)) return { token: null, deviceId: null };
   if (!isNotificationGranted()) {
     console.info('[FCM] aborted: notification permission not granted');
-    return null;
+    return { token: null, deviceId: null };
   }
 
   const functionUrl = import.meta.env.VITE_FIREBASE_FUNCTION_URL?.trim();
@@ -25,7 +25,7 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     console.warn(
       'FCM backend URL not configured or invalid for local dev. Skipping device registration.',
     );
-    return null;
+    return { token: null, deviceId: null };
   }
 
   console.info('[FCM] backend configured', { functionUrl });
@@ -33,7 +33,7 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
   const registration = await ensureServiceWorkerReady();
   if (!registration) {
     console.info('[FCM] aborted: no service worker registration');
-    return null;
+    return { token: null, deviceId: null };
   }
   if (!registration.pushManager) {
     console.error('[FCM] registration missing pushManager', {
@@ -58,6 +58,8 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
     tokenPreview: token ? `${token.slice(0, 12)}...` : null,
   });
 
+  let fetchedSettings = null;
+  let deviceId = null;
   try {
     const idToken = await auth.currentUser?.getIdToken?.();
     console.info('[FCM] registering device', {
@@ -76,7 +78,6 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
         platform: 'web',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         language: i18n.language,
-        notificationSettings,
       }),
     });
 
@@ -84,9 +85,17 @@ export const initFCMForUser = async (userId: string, i18n: any, notificationSett
       status: response.status,
       ok: response.ok,
     });
+    if (response.ok) {
+      const data = await response.json();
+      fetchedSettings = data.notificationSettings ?? null;
+      deviceId = data.deviceId ?? null;
+      if (deviceId) {
+        localStorage.setItem('habit-tracker-device-id', deviceId);
+      }
+    }
   } catch (error) {
     console.error('Failed to register device for FCM', error);
   }
 
-  return token;
+  return { token, notificationSettings: fetchedSettings, deviceId };
 };

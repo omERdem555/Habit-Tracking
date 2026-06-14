@@ -29,6 +29,7 @@ export interface AppState {
   habits: Habit[];
   completions: Completion[];
   notificationSettings: NotificationSettings;
+  deviceId?: string;
 }
 
 export type Action =
@@ -39,3 +40,4 @@ export type Action =
   | { type: 'addCompletion'; payload: { habitId: string; date: string; hours?: number; note?: string } }
   | { type: 'removeCompletion'; payload: { completionId: string } }
   | { type: 'updateNotificationSettings'; payload: NotificationSettings }
+  | { type: 'setDeviceId'; payload: string }

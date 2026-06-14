@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { loadState, saveState, defaultState } from './lib/storage';
 import { getStreak, getLongestStreak, getTotalCompletions, getHabitStats } from './lib/stats';
 import { groupByDate, normalizeCompletions } from './lib/completion';
-import { localDateString} from './lib/date';
+import { localDateString } from './lib/date';
 import { buildYearSummaries, getDayBackground } from './lib/heatmap';
-
+// duplicate import removed
 import reducer from './reducers/appReducer';
 
 import type { Habit, Completion } from './types';
@@ -35,6 +35,7 @@ import { useAuth } from './auth/AuthContext';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { initFCMForUser } from './lib/fcm';
+import { fetchDeviceSettings, updateDeviceSettings } from './lib/deviceSettings';
 import {
   getLiveNotificationPermission,
   isNotificationGranted,
@@ -123,16 +124,34 @@ function App() {
             loadedState.notificationSettings = {
               ...loadedState.notificationSettings,
               permissionStatus: livePermission,
-              enabled:
-                loadedState.notificationSettings.enabled &&
-                livePermission === 'granted',
             };
           }
 
           const isPending = localStorage.getItem(`habit-tracker-user-${user.uid}-pending`) === 'true';
 
           if (isPending) {
-            console.info('Local state has unsynced offline changes. Skipping remote state overwrite.');
+            console.info('Local state has unsynced offline changes. Syncing local state to Firestore.');
+            try {
+              const sanitizedState = JSON.parse(
+                JSON.stringify({
+                  ...cached,
+                  schemaVersion: defaultState.schemaVersion,
+                }),
+              );
+
+              await setDoc(
+                userDocRef,
+                {
+                  state: sanitizedState,
+                  updatedAt: serverTimestamp(),
+                },
+                { merge: true },
+              );
+              localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
+              console.info('Synced pending state on startup.');
+            } catch (err) {
+              console.warn('Failed to sync pending state on startup:', err);
+            }
           } else {
             dispatch({
               type: 'load',
@@ -161,18 +180,21 @@ function App() {
   useEffect(() => {
     if (authLoading) return;
 
+    // Guest (no auth) – just local storage
     if (!user) {
       saveState(state);
       return;
     }
 
-    // Local-first write for logged-in user
-    saveState(state, user.uid);
-    localStorage.setItem(`habit-tracker-user-${user.uid}-pending`, 'true');
+    // If we are offline (remote state not yet loaded), keep the current local‑first behaviour
+    if (!remoteStateLoaded) {
+      saveState(state, user.uid);
+      localStorage.setItem(`habit-tracker-user-${user.uid}-pending`, 'true');
+      return;
+    }
 
-    if (!remoteStateLoaded) return;
-
-    const saveRemoteState = async () => {
+    // Online – write to Firestore first, then update local storage
+    const syncOnline = async () => {
       try {
         const userDocRef = doc(db, 'users', user.uid);
         const sanitizedState = JSON.parse(
@@ -181,22 +203,22 @@ function App() {
             schemaVersion: defaultState.schemaVersion,
           }),
         );
-
         await setDoc(
           userDocRef,
-          {
-            state: sanitizedState,
-            updatedAt: serverTimestamp(),
-          },
+          { state: sanitizedState, updatedAt: serverTimestamp() },
           { merge: true },
         );
+        // Remote write succeeded – now persist locally and clear pending flag
+        saveState(state, user.uid);
         localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
       } catch (err) {
-        console.warn('Failed to save state to Firestore (offline?):', err);
+        console.warn('Failed to save state to Firestore (offline fallback?):', err);
+        // Fallback to local‑first strategy if remote write fails
+        saveState(state, user.uid);
+        localStorage.setItem(`habit-tracker-user-${user.uid}-pending`, 'true');
       }
     };
-
-    saveRemoteState();
+    syncOnline();
   }, [state, user, authLoading, remoteStateLoaded]);
 
   // Sync when online transitions occur
@@ -210,9 +232,10 @@ function App() {
       console.info('Device went online, syncing pending state...');
       try {
         const userDocRef = doc(db, 'users', user.uid);
+        const cachedState = loadState(user.uid);
         const sanitizedState = JSON.parse(
           JSON.stringify({
-            ...state,
+            ...cachedState,
             schemaVersion: defaultState.schemaVersion,
           }),
         );
@@ -236,7 +259,7 @@ function App() {
     return () => {
       window.removeEventListener('online', handleOnline);
     };
-  }, [user, state, remoteStateLoaded]);
+  }, [user, remoteStateLoaded]);
 
   /* PWA install prompt — only hide when currently running as installed PWA */
   useEffect(() => {
@@ -272,6 +295,27 @@ function App() {
 
   // remote load merged with local load above
 
+
+
+  useEffect(() => {
+    if (!user) return;
+    const loadDeviceSettings = async () => {
+      // Ensure deviceId is available in state
+      const currentDeviceId = state.deviceId;
+      if (!currentDeviceId) return;
+      const remoteSettings = await fetchDeviceSettings(user.uid, currentDeviceId);
+      if (remoteSettings) {
+        dispatch({
+          type: 'updateNotificationSettings',
+          payload: remoteSettings,
+        });
+        // Also persist to local storage for offline use
+        saveState({ ...state, notificationSettings: remoteSettings }, user.uid);
+      }
+    };
+    loadDeviceSettings();
+  }, [user, state.deviceId]);
+
   useEffect(() => {
     if (!user) return;
     if (!state.notificationSettings.enabled) return;
@@ -279,13 +323,17 @@ function App() {
 
     const initFCM = async () => {
       try {
-        const token = await initFCMForUser(
+        const { token, deviceId } = await initFCMForUser(
           user.uid,
           i18n,
           state.notificationSettings,
         );
 
         if (!token) return;
+
+        if (deviceId) {
+          dispatch({ type: 'setDeviceId', payload: deviceId });
+        }
 
         localStorage.setItem('fcm_token', token);
       } catch (err) {
@@ -402,7 +450,7 @@ function App() {
 
   useNotifications({
     enabled:
-      !user &&
+      !!user &&
       state.notificationSettings.enabled &&
       isNotificationGranted(),
     settings: state.notificationSettings,
@@ -466,7 +514,7 @@ function App() {
     if (!user || !isNotificationGranted()) return;
 
     try {
-      const token = await initFCMForUser(
+      const { token, deviceId } = await initFCMForUser(
         user.uid,
         i18n,
         {
@@ -478,6 +526,9 @@ function App() {
 
       if (!token) return;
 
+      if (deviceId) {
+        dispatch({ type: 'setDeviceId', payload: deviceId });
+      }
       localStorage.setItem('fcm_token', token);
     } catch (err) {
       console.error('FCM init failed:', err);
@@ -488,16 +539,23 @@ function App() {
     if ('Notification' in window) {
       const livePermission = getLiveNotificationPermission();
 
+      const newSettings = {
+        ...state.notificationSettings,
+        permissionStatus: livePermission,
+      };
+
       dispatch({
         type: 'updateNotificationSettings',
-        payload: {
-          ...state.notificationSettings,
-          permissionStatus: livePermission,
-          enabled:
-            state.notificationSettings.enabled &&
-            livePermission === 'granted',
-        },
+        payload: newSettings,
       });
+
+      // Persist per-device notification settings if we have user and deviceId
+      if (user && state.deviceId) {
+        // Fire off async update (no await needed in UI thread)
+        updateDeviceSettings(user.uid, state.deviceId, newSettings).catch((err) => {
+          console.error('Failed to sync device settings:', err);
+        });
+      }
     }
 
     setSettingsOpen(false);

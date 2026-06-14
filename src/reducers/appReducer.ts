@@ -89,6 +89,13 @@ const reducer = (state: AppState, action: Action): AppState => {
         ),
       };
 
+    case 'setDeviceId': {
+      return {
+        ...state,
+        deviceId: action.payload,
+      };
+    }
+
     case 'updateNotificationSettings':
       return {
         ...state,
