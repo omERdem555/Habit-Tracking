@@ -13,57 +13,9 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-self.addEventListener('push', (event) => {
-  console.log('[SW] push event received');
-
-  if (!event.data) {
-    console.log('[SW] push event has no data');
-    return;
-  }
-
-  let payload = null;
-  try {
-    payload = event.data.json();
-  } catch (error) {
-    console.log('[SW] push payload is not JSON, falling back to text', error);
-    const text = event.data.text();
-    event.waitUntil(
-      self.registration.showNotification('Habit Tracker', {
-        body: text,
-        icon: '/icon192.png',
-        badge: '/icon192.png',
-        data: { raw: text },
-      }),
-    );
-    return;
-  }
-
-  console.log('[SW] push payload', payload);
-
-  const title = payload?.notification?.title || payload?.data?.title || 'Habit Tracker';
-  const body = payload?.notification?.body || payload?.data?.body || '';
-
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: '/icon192.png',
-      badge: '/icon192.png',
-      data: payload?.data || null,
-    }),
-  );
-});
-
+// Background message handler. FCM handles the notification automatically if the payload contains notification details.
 messaging.onBackgroundMessage((payload) => {
-  console.log('Background message', payload);
-
-  self.registration.showNotification(
-    payload.notification?.title || 'Habit Tracker',
-    {
-      body: payload.notification?.body || '',
-      icon: '/icon192.png',
-      badge: '/icon192.png',
-    },
-  );
+  console.log('[SW] Background message received:', payload);
 });
 
 const CACHE_VERSION = 'v8';

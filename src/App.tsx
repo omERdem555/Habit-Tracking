@@ -82,26 +82,161 @@ function App() {
 
   /* ================= EFFECTS ================= */
 
+  // Load State (guest or authenticated)
   useEffect(() => {
+    let canceled = false;
+
     if (authLoading) return;
 
-    if (user) {
-      try {
-        window.localStorage.removeItem('habit-tracker-v1');
-      } catch {
-        // ignore
-      }
+    if (!user) {
+      setRemoteStateLoaded(false);
+      dispatch({ type: 'load', payload: loadState() });
       return;
     }
 
-    dispatch({ type: 'load', payload: loadState() });
+    // Authenticated user: load local cache immediately for offline speed
+    const cached = loadState(user.uid);
+    dispatch({ type: 'load', payload: cached });
+
+    const loadRemoteState = async () => {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const snapshot = await getDoc(userDocRef);
+
+        if (canceled) return;
+
+        if (!snapshot.exists()) {
+          setRemoteStateLoaded(true);
+          return;
+        }
+
+        const data = snapshot.data();
+
+        if (data?.state && typeof data.state === 'object') {
+          const loadedState = {
+            ...defaultState,
+            ...data.state,
+          };
+
+          if ('Notification' in window) {
+            const livePermission = getLiveNotificationPermission();
+            loadedState.notificationSettings = {
+              ...loadedState.notificationSettings,
+              permissionStatus: livePermission,
+              enabled:
+                loadedState.notificationSettings.enabled &&
+                livePermission === 'granted',
+            };
+          }
+
+          const isPending = localStorage.getItem(`habit-tracker-user-${user.uid}-pending`) === 'true';
+
+          if (isPending) {
+            console.info('Local state has unsynced offline changes. Skipping remote state overwrite.');
+          } else {
+            dispatch({
+              type: 'load',
+              payload: loadedState,
+            });
+            saveState(loadedState, user.uid);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load user state from Firestore:', err);
+      } finally {
+        if (!canceled) {
+          setRemoteStateLoaded(true);
+        }
+      }
+    };
+
+    loadRemoteState();
+
+    return () => {
+      canceled = true;
+    };
   }, [authLoading, user]);
 
+  // Save State (guest or authenticated)
   useEffect(() => {
+    if (authLoading) return;
+
     if (!user) {
       saveState(state);
+      return;
     }
-  }, [state, user]);
+
+    // Local-first write for logged-in user
+    saveState(state, user.uid);
+    localStorage.setItem(`habit-tracker-user-${user.uid}-pending`, 'true');
+
+    if (!remoteStateLoaded) return;
+
+    const saveRemoteState = async () => {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const sanitizedState = JSON.parse(
+          JSON.stringify({
+            ...state,
+            schemaVersion: defaultState.schemaVersion,
+          }),
+        );
+
+        await setDoc(
+          userDocRef,
+          {
+            state: sanitizedState,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
+      } catch (err) {
+        console.warn('Failed to save state to Firestore (offline?):', err);
+      }
+    };
+
+    saveRemoteState();
+  }, [state, user, authLoading, remoteStateLoaded]);
+
+  // Sync when online transitions occur
+  useEffect(() => {
+    if (!user || !remoteStateLoaded) return;
+
+    const handleOnline = async () => {
+      const isPending = localStorage.getItem(`habit-tracker-user-${user.uid}-pending`) === 'true';
+      if (!isPending) return;
+
+      console.info('Device went online, syncing pending state...');
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const sanitizedState = JSON.parse(
+          JSON.stringify({
+            ...state,
+            schemaVersion: defaultState.schemaVersion,
+          }),
+        );
+
+        await setDoc(
+          userDocRef,
+          {
+            state: sanitizedState,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
+        console.info('Pending state synced successfully.');
+      } catch (err) {
+        console.warn('Sync on online transition failed:', err);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [user, state, remoteStateLoaded]);
 
   /* PWA install prompt — only hide when currently running as installed PWA */
   useEffect(() => {
@@ -135,63 +270,7 @@ function App() {
 
   /* Firebase Cloud Messaging token retrieval */
 
-  useEffect(() => {
-    let canceled = false;
-
-    if (!user) {
-      setRemoteStateLoaded(false);
-      return;
-    }
-
-    const loadRemoteState = async () => {
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        const snapshot = await getDoc(userDocRef);
-
-        if (!snapshot.exists()) {
-          setRemoteStateLoaded(true);
-          return;
-        }
-
-        const data = snapshot.data();
-
-        if (data?.state && typeof data.state === 'object') {
-          const loadedState = {
-            ...defaultState,
-            ...data.state,
-          };
-
-          if ('Notification' in window) {
-            const livePermission = getLiveNotificationPermission();
-            loadedState.notificationSettings = {
-              ...loadedState.notificationSettings,
-              permissionStatus: livePermission,
-              enabled:
-                loadedState.notificationSettings.enabled &&
-                livePermission === 'granted',
-            };
-          }
-
-          dispatch({
-            type: 'load',
-            payload: loadedState,
-          });
-        }
-      } catch (err) {
-        console.error('Failed to load user state:', err);
-      } finally {
-        if (!canceled) {
-          setRemoteStateLoaded(true);
-        }
-      }
-    };
-
-    loadRemoteState();
-
-    return () => {
-      canceled = true;
-    };
-  }, [user]);
+  // remote load merged with local load above
 
   useEffect(() => {
     if (!user) return;
@@ -217,34 +296,7 @@ function App() {
     initFCM();
   }, [user, i18n, state.notificationSettings]);
 
-  useEffect(() => {
-    if (!user || !remoteStateLoaded) return;
-
-    const saveRemoteState = async () => {
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        const sanitizedState = JSON.parse(
-          JSON.stringify({
-            ...state,
-            schemaVersion: defaultState.schemaVersion,
-          }),
-        );
-
-        await setDoc(
-          userDocRef,
-          {
-            state: sanitizedState,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-      } catch (err) {
-        console.error('Failed to save user state:', err);
-      }
-    };
-
-    saveRemoteState();
-  }, [user, state, remoteStateLoaded]);
+  // remote save merged with local save above
 
   /* ================= DERIVED ================= */
 

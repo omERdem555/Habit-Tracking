@@ -78,7 +78,9 @@ export default function useNotifications({
       const meta = readMeta();
       const now = Date.now();
 
-      const interval = settings.intervalHours * 60 * 60 * 1000;
+      // 10-minute buffer to avoid interval skipping/drifting due to small tick delays
+      const buffer = 10 * 60 * 1000;
+      const interval = settings.intervalHours * 60 * 60 * 1000 - buffer;
       if (now - meta.lastNotified < interval) return;
 
       const missedYesterday = getMissedYesterday();
@@ -92,10 +94,14 @@ export default function useNotifications({
 
         for (const body of bodies) {
           const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
+          const isYesterday = body.includes('Dün') || body.includes('Yesterday');
+          const tag = isYesterday ? 'reminder-yesterday' : 'reminder-today';
+
           const payload = {
             body,
             icon: '/icon512.png',
             badge: '/icon192.png',
+            tag,
             data: {
               type: 'reminder',
             },
@@ -104,7 +110,7 @@ export default function useNotifications({
           if (reg?.showNotification) {
             reg.showNotification(title, payload);
           } else {
-            new Notification(title, { body });
+            new Notification(title, { body, tag, icon: '/icon192.png' });
           }
         }
 

@@ -36,13 +36,19 @@ type SkipReason =
   | 'no_pending_messages';
 
 function getLocalHour(timezone: string, now = new Date()): number {
-  const hour = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: 'numeric',
-    hour12: false,
-  }).format(now);
+  try {
+    const hourStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+    }).format(now);
 
-  return parseInt(hour, 10);
+    let hour = parseInt(hourStr, 10);
+    if (hour === 24) hour = 0;
+    return hour;
+  } catch (e) {
+    return now.getUTCHours();
+  }
 }
 
 function getLocalDateString(timezone: string, now = new Date()): string {
@@ -84,7 +90,9 @@ function intervalElapsed(
         ? lastNotified.toMillis()
         : 0;
 
-  const intervalMs = intervalHours * 60 * 60 * 1000;
+  // 10-minute buffer to account for minor cron execution delays
+  const bufferMs = 10 * 60 * 1000;
+  const intervalMs = intervalHours * 60 * 60 * 1000 - bufferMs;
   return now.getTime() - lastMs >= intervalMs;
 }
 
@@ -358,12 +366,21 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       for (const body of bodies) {
         const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
+        const isYesterday = body.includes('Dün') || body.includes('Yesterday');
+        const tag = isYesterday ? 'reminder-yesterday' : 'reminder-today';
+
         queuedMessages.push({
           message: {
             token,
             notification: { title, body },
             webpush: {
               fcmOptions: { link: '/' },
+              notification: {
+                tag,
+                renotify: true,
+                icon: '/icon192.png',
+                badge: '/icon192.png',
+              },
             },
           },
           ref: deviceDoc.ref,

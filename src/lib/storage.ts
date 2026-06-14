@@ -61,13 +61,14 @@ const normalizeCompletions = (completions: unknown[]): Completion[] => {
   return result;
 };
 
-export function loadState(): AppState {
+export function loadState(uid?: string): AppState {
   if (typeof window === 'undefined') {
     return defaultState;
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const key = uid ? `habit-tracker-user-${uid}` : STORAGE_KEY;
+    const raw = window.localStorage.getItem(key);
     if (!raw) return defaultState;
 
     const parsed = JSON.parse(raw) as AppState;
@@ -94,12 +95,14 @@ export function loadState(): AppState {
   }
 }
 
-export function saveState(state: AppState): void {
+export function saveState(state: AppState, uid?: string): void {
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const key = uid ? `habit-tracker-user-${uid}` : STORAGE_KEY;
+    window.localStorage.setItem(key, JSON.stringify(state));
   } catch {
     // silent fail (quota vs.)
   }
 }
+
