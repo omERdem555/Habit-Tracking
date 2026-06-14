@@ -7,7 +7,7 @@ export const defaultState: AppState = {
   schemaVersion: CURRENT_SCHEMA,
   habits: [],
   completions: [],
-  notificationSettings: {
+  deviceSettings: {
     enabled: false,
     intervalHours: 2,
     startHour: 9,
@@ -89,7 +89,7 @@ export function loadState(uid?: string): AppState {
       completions: Array.isArray(parsed.completions)
         ? normalizeCompletions(parsed.completions)
         : [],
-      notificationSettings: parsed.notificationSettings ?? defaultState.notificationSettings,
+      deviceSettings: parsed.deviceSettings ?? defaultState.deviceSettings,
       deviceId: parsed.deviceId ?? localStorage.getItem('habit-tracker-device-id') ?? undefined,
     };
   } catch {

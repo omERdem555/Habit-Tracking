@@ -9,7 +9,7 @@ import { buildYearSummaries, getDayBackground } from './lib/heatmap';
 // duplicate import removed
 import reducer from './reducers/appReducer';
 
-import type { Habit, Completion } from './types';
+import type { Habit, Completion, NotificationSettings } from './types';
 
 /* components */
 import CompletionModal from './components/CompletionModal';
@@ -278,14 +278,18 @@ function App() {
     const livePermission = getLiveNotificationPermission();
 
     dispatch({
-      type: 'updateNotificationSettings',
-      payload: {
-        ...state.notificationSettings,
-        permissionStatus: livePermission,
-        enabled:
-          state.notificationSettings.enabled &&
-          livePermission === 'granted',
-      },
+      type: 'updateDeviceSettings',
+        payload: {
+          ...(state.deviceSettings ?? {
+            enabled: false,
+            intervalHours: 1,
+            startHour: 0,
+            endHour: 23,
+            permissionStatus: livePermission,
+          }),
+          permissionStatus: livePermission,
+          enabled: Boolean(state.deviceSettings?.enabled && livePermission === 'granted'),
+        },
     });
     // Only re-sync when the settings modal opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,11 +310,11 @@ function App() {
       const remoteSettings = await fetchDeviceSettings(user.uid, currentDeviceId);
       if (remoteSettings) {
         dispatch({
-          type: 'updateNotificationSettings',
+          type: 'updateDeviceSettings',
           payload: remoteSettings,
         });
         // Also persist to local storage for offline use
-        saveState({ ...state, notificationSettings: remoteSettings }, user.uid);
+        saveState({ ...state, deviceSettings: remoteSettings }, user.uid);
       }
     };
     loadDeviceSettings();
@@ -318,7 +322,7 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
-    if (!state.notificationSettings.enabled) return;
+    if (!state.deviceSettings?.enabled) return;
     if (!isNotificationGranted()) return;
 
     const initFCM = async () => {
@@ -326,7 +330,7 @@ function App() {
         const { token, deviceId } = await initFCMForUser(
           user.uid,
           i18n,
-          state.notificationSettings,
+          state.deviceSettings,
         );
 
         if (!token) return;
@@ -342,7 +346,7 @@ function App() {
     };
 
     initFCM();
-  }, [user, i18n, state.notificationSettings]);
+  }, [user, i18n, state.deviceSettings]);
 
   // remote save merged with local save above
 
@@ -449,11 +453,8 @@ function App() {
   /* ================= NOTIFICATIONS ================= */
 
   useNotifications({
-    enabled:
-      !!user &&
-      state.notificationSettings.enabled &&
-      isNotificationGranted(),
-    settings: state.notificationSettings,
+    enabled: !!(user && state.deviceSettings?.enabled && isNotificationGranted()),
+    settings: state.deviceSettings,
     habits: state.habits,
     completions: state.completions,
     language: i18n.language,
@@ -518,7 +519,7 @@ function App() {
         user.uid,
         i18n,
         {
-          ...state.notificationSettings,
+          ...state.deviceSettings,
           enabled: true,
           permissionStatus: 'granted',
         },
@@ -539,15 +540,21 @@ function App() {
     if ('Notification' in window) {
       const livePermission = getLiveNotificationPermission();
 
-      const newSettings = {
-        ...state.notificationSettings,
-        permissionStatus: livePermission,
-      };
+      const newSettings: NotificationSettings = {
+  ...(state.deviceSettings ?? {
+    enabled: false,
+    intervalHours: 1,
+    startHour: 0,
+    endHour: 23,
+    permissionStatus: livePermission,
+  }),
+  permissionStatus: livePermission,
+};
 
-      dispatch({
-        type: 'updateNotificationSettings',
-        payload: newSettings,
-      });
+dispatch({
+  type: 'updateDeviceSettings',
+  payload: newSettings,
+});
 
       // Persist per-device notification settings if we have user and deviceId
       if (user && state.deviceId) {
