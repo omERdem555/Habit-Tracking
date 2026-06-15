@@ -42,7 +42,7 @@ const reducer = (state: AppState, action: Action): AppState => {
       return {
         ...state,
         habits: state.habits.map((habit) =>
-          habit.id === action.payload.id ? { ...habit, name: action.payload.name.trim() } : habit
+          habit.id === action.payload.id ? { ...habit, name: action.payload.name.trim() } : habit,
         ),
       };
 
@@ -89,17 +89,10 @@ const reducer = (state: AppState, action: Action): AppState => {
         ),
       };
 
-    case 'setDeviceId': {
+    case 'updateNotificationSettings':
       return {
         ...state,
-        deviceId: action.payload,
-      };
-    }
-
-    case 'updateDeviceSettings':
-      return {
-        ...state,
-        deviceSettings: action.payload,
+        notificationSettings: action.payload,
       };
 
     default:

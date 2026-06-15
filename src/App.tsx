@@ -4,12 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { loadState, saveState, defaultState } from './lib/storage';
 import { getStreak, getLongestStreak, getTotalCompletions, getHabitStats } from './lib/stats';
 import { groupByDate, normalizeCompletions } from './lib/completion';
-import { localDateString } from './lib/date';
+import { localDateString} from './lib/date';
 import { buildYearSummaries, getDayBackground } from './lib/heatmap';
-// duplicate import removed
+
 import reducer from './reducers/appReducer';
 
-import type { Habit, Completion, NotificationSettings } from './types';
+import type { Habit, Completion } from './types';
 
 /* components */
 import CompletionModal from './components/CompletionModal';
@@ -35,7 +35,6 @@ import { useAuth } from './auth/AuthContext';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { initFCMForUser } from './lib/fcm';
-import { fetchDeviceSettings, updateDeviceSettings } from './lib/deviceSettings';
 import {
   getLiveNotificationPermission,
   isNotificationGranted,
@@ -83,28 +82,71 @@ function App() {
 
   /* ================= EFFECTS ================= */
 
-  // Load State (guest or authenticated)
   useEffect(() => {
-    let canceled = false;
-
     if (authLoading) return;
 
-    if (!user) {
-      setRemoteStateLoaded(false);
-      dispatch({ type: 'load', payload: loadState() });
+    if (user) {
+      try {
+        window.localStorage.removeItem('habit-tracker-v1');
+      } catch {
+        // ignore
+      }
       return;
     }
 
-    // Authenticated user: load local cache immediately for offline speed
-    const cached = loadState(user.uid);
-    dispatch({ type: 'load', payload: cached });
+    dispatch({ type: 'load', payload: loadState() });
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    if (!user) {
+      saveState(state);
+    }
+  }, [state, user]);
+
+  /* PWA install prompt — only hide when currently running as installed PWA */
+  useEffect(() => {
+    setShowInstallPrompt(!isStandalone);
+
+    try {
+      localStorage.removeItem('habit-tracker-pwa-install-dismissed');
+    } catch {
+      // ignore
+    }
+  }, [isStandalone]);
+
+  useEffect(() => {
+    if (!settingsOpen || !('Notification' in window)) return;
+
+    const livePermission = getLiveNotificationPermission();
+
+    dispatch({
+      type: 'updateNotificationSettings',
+      payload: {
+        ...state.notificationSettings,
+        permissionStatus: livePermission,
+        enabled:
+          state.notificationSettings.enabled &&
+          livePermission === 'granted',
+      },
+    });
+    // Only re-sync when the settings modal opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen]);
+
+  /* Firebase Cloud Messaging token retrieval */
+
+  useEffect(() => {
+    let canceled = false;
+
+    if (!user) {
+      setRemoteStateLoaded(false);
+      return;
+    }
 
     const loadRemoteState = async () => {
       try {
         const userDocRef = doc(db, 'users', user.uid);
         const snapshot = await getDoc(userDocRef);
-
-        if (canceled) return;
 
         if (!snapshot.exists()) {
           setRemoteStateLoaded(true);
@@ -124,44 +166,19 @@ function App() {
             loadedState.notificationSettings = {
               ...loadedState.notificationSettings,
               permissionStatus: livePermission,
+              enabled:
+                loadedState.notificationSettings.enabled &&
+                livePermission === 'granted',
             };
           }
 
-          const isPending = localStorage.getItem(`habit-tracker-user-${user.uid}-pending`) === 'true';
-
-          if (isPending) {
-            console.info('Local state has unsynced offline changes. Syncing local state to Firestore.');
-            try {
-              const sanitizedState = JSON.parse(
-                JSON.stringify({
-                  ...cached,
-                  schemaVersion: defaultState.schemaVersion,
-                }),
-              );
-
-              await setDoc(
-                userDocRef,
-                {
-                  state: sanitizedState,
-                  updatedAt: serverTimestamp(),
-                },
-                { merge: true },
-              );
-              localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
-              console.info('Synced pending state on startup.');
-            } catch (err) {
-              console.warn('Failed to sync pending state on startup:', err);
-            }
-          } else {
-            dispatch({
-              type: 'load',
-              payload: loadedState,
-            });
-            saveState(loadedState, user.uid);
-          }
+          dispatch({
+            type: 'load',
+            payload: loadedState,
+          });
         }
       } catch (err) {
-        console.error('Failed to load user state from Firestore:', err);
+        console.error('Failed to load user state:', err);
       } finally {
         if (!canceled) {
           setRemoteStateLoaded(true);
@@ -174,68 +191,41 @@ function App() {
     return () => {
       canceled = true;
     };
-  }, [authLoading, user]);
+  }, [user]);
 
-  // Save State (guest or authenticated)
   useEffect(() => {
-    if (authLoading) return;
+    if (!user) return;
+    if (!state.notificationSettings.enabled) return;
+    if (!isNotificationGranted()) return;
 
-    // Guest (no auth) – just local storage
-    if (!user) {
-      saveState(state);
-      return;
-    }
+    const initFCM = async () => {
+      try {
+        const token = await initFCMForUser(
+          user.uid,
+          i18n,
+          state.notificationSettings,
+        );
 
-    // If we are offline (remote state not yet loaded), keep the current local‑first behaviour
-    if (!remoteStateLoaded) {
-      saveState(state, user.uid);
-      localStorage.setItem(`habit-tracker-user-${user.uid}-pending`, 'true');
-      return;
-    }
+        if (!token) return;
 
-    // Online – write to Firestore first, then update local storage
-    const syncOnline = async () => {
+        localStorage.setItem('fcm_token', token);
+      } catch (err) {
+        console.error('FCM init failed:', err);
+      }
+    };
+
+    initFCM();
+  }, [user, i18n, state.notificationSettings]);
+
+  useEffect(() => {
+    if (!user || !remoteStateLoaded) return;
+
+    const saveRemoteState = async () => {
       try {
         const userDocRef = doc(db, 'users', user.uid);
         const sanitizedState = JSON.parse(
           JSON.stringify({
             ...state,
-            schemaVersion: defaultState.schemaVersion,
-          }),
-        );
-        await setDoc(
-          userDocRef,
-          { state: sanitizedState, updatedAt: serverTimestamp() },
-          { merge: true },
-        );
-        // Remote write succeeded – now persist locally and clear pending flag
-        saveState(state, user.uid);
-        localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
-      } catch (err) {
-        console.warn('Failed to save state to Firestore (offline fallback?):', err);
-        // Fallback to local‑first strategy if remote write fails
-        saveState(state, user.uid);
-        localStorage.setItem(`habit-tracker-user-${user.uid}-pending`, 'true');
-      }
-    };
-    syncOnline();
-  }, [state, user, authLoading, remoteStateLoaded]);
-
-  // Sync when online transitions occur
-  useEffect(() => {
-    if (!user || !remoteStateLoaded) return;
-
-    const handleOnline = async () => {
-      const isPending = localStorage.getItem(`habit-tracker-user-${user.uid}-pending`) === 'true';
-      if (!isPending) return;
-
-      console.info('Device went online, syncing pending state...');
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        const cachedState = loadState(user.uid);
-        const sanitizedState = JSON.parse(
-          JSON.stringify({
-            ...cachedState,
             schemaVersion: defaultState.schemaVersion,
           }),
         );
@@ -248,107 +238,13 @@ function App() {
           },
           { merge: true },
         );
-        localStorage.removeItem(`habit-tracker-user-${user.uid}-pending`);
-        console.info('Pending state synced successfully.');
       } catch (err) {
-        console.warn('Sync on online transition failed:', err);
+        console.error('Failed to save user state:', err);
       }
     };
 
-    window.addEventListener('online', handleOnline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-    };
-  }, [user, remoteStateLoaded]);
-
-  /* PWA install prompt — only hide when currently running as installed PWA */
-  useEffect(() => {
-    setShowInstallPrompt(!isStandalone);
-
-    try {
-      localStorage.removeItem('habit-tracker-pwa-install-dismissed');
-    } catch {
-      // ignore
-    }
-  }, [isStandalone]);
-
-  useEffect(() => {
-    if (!settingsOpen || !('Notification' in window)) return;
-
-    const livePermission = getLiveNotificationPermission();
-
-    dispatch({
-      type: 'updateDeviceSettings',
-        payload: {
-          ...(state.deviceSettings ?? {
-            enabled: false,
-            intervalHours: 1,
-            startHour: 0,
-            endHour: 23,
-            permissionStatus: livePermission,
-          }),
-          permissionStatus: livePermission,
-          enabled: Boolean(state.deviceSettings?.enabled && livePermission === 'granted'),
-        },
-    });
-    // Only re-sync when the settings modal opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsOpen]);
-
-  /* Firebase Cloud Messaging token retrieval */
-
-  // remote load merged with local load above
-
-
-
-  useEffect(() => {
-    if (!user) return;
-    const loadDeviceSettings = async () => {
-      // Ensure deviceId is available in state
-      const currentDeviceId = state.deviceId;
-      if (!currentDeviceId) return;
-      const remoteSettings = await fetchDeviceSettings(user.uid, currentDeviceId);
-      if (remoteSettings) {
-        dispatch({
-          type: 'updateDeviceSettings',
-          payload: remoteSettings,
-        });
-        // Also persist to local storage for offline use
-        saveState({ ...state, deviceSettings: remoteSettings }, user.uid);
-      }
-    };
-    loadDeviceSettings();
-  }, [user, state.deviceId]);
-
-  useEffect(() => {
-    if (!user) return;
-    if (!state.deviceSettings?.enabled) return;
-    if (!isNotificationGranted()) return;
-
-    const initFCM = async () => {
-      try {
-        const { token, deviceId } = await initFCMForUser(
-          user.uid,
-          i18n,
-          state.deviceSettings,
-        );
-
-        if (!token) return;
-
-        if (deviceId) {
-          dispatch({ type: 'setDeviceId', payload: deviceId });
-        }
-
-        localStorage.setItem('fcm_token', token);
-      } catch (err) {
-        console.error('FCM init failed:', err);
-      }
-    };
-
-    initFCM();
-  }, [user, i18n, state.deviceSettings]);
-
-  // remote save merged with local save above
+    saveRemoteState();
+  }, [user, state, remoteStateLoaded]);
 
   /* ================= DERIVED ================= */
 
@@ -453,8 +349,11 @@ function App() {
   /* ================= NOTIFICATIONS ================= */
 
   useNotifications({
-    enabled: !!(user && state.deviceSettings?.enabled && isNotificationGranted()),
-    settings: state.deviceSettings,
+    enabled:
+      !user &&
+      state.notificationSettings.enabled &&
+      isNotificationGranted(),
+    settings: state.notificationSettings,
     habits: state.habits,
     completions: state.completions,
     language: i18n.language,
@@ -515,11 +414,11 @@ function App() {
     if (!user || !isNotificationGranted()) return;
 
     try {
-      const { token, deviceId } = await initFCMForUser(
+      const token = await initFCMForUser(
         user.uid,
         i18n,
         {
-          ...state.deviceSettings,
+          ...state.notificationSettings,
           enabled: true,
           permissionStatus: 'granted',
         },
@@ -527,9 +426,6 @@ function App() {
 
       if (!token) return;
 
-      if (deviceId) {
-        dispatch({ type: 'setDeviceId', payload: deviceId });
-      }
       localStorage.setItem('fcm_token', token);
     } catch (err) {
       console.error('FCM init failed:', err);
@@ -540,29 +436,16 @@ function App() {
     if ('Notification' in window) {
       const livePermission = getLiveNotificationPermission();
 
-      const newSettings: NotificationSettings = {
-  ...(state.deviceSettings ?? {
-    enabled: false,
-    intervalHours: 1,
-    startHour: 0,
-    endHour: 23,
-    permissionStatus: livePermission,
-  }),
-  permissionStatus: livePermission,
-};
-
-dispatch({
-  type: 'updateDeviceSettings',
-  payload: newSettings,
-});
-
-      // Persist per-device notification settings if we have user and deviceId
-      if (user && state.deviceId) {
-        // Fire off async update (no await needed in UI thread)
-        updateDeviceSettings(user.uid, state.deviceId, newSettings).catch((err) => {
-          console.error('Failed to sync device settings:', err);
-        });
-      }
+      dispatch({
+        type: 'updateNotificationSettings',
+        payload: {
+          ...state.notificationSettings,
+          permissionStatus: livePermission,
+          enabled:
+            state.notificationSettings.enabled &&
+            livePermission === 'granted',
+        },
+      });
     }
 
     setSettingsOpen(false);

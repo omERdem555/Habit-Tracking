@@ -7,7 +7,7 @@ export const defaultState: AppState = {
   schemaVersion: CURRENT_SCHEMA,
   habits: [],
   completions: [],
-  deviceSettings: {
+  notificationSettings: {
     enabled: false,
     intervalHours: 2,
     startHour: 9,
@@ -61,14 +61,13 @@ const normalizeCompletions = (completions: unknown[]): Completion[] => {
   return result;
 };
 
-export function loadState(uid?: string): AppState {
+export function loadState(): AppState {
   if (typeof window === 'undefined') {
     return defaultState;
   }
 
   try {
-    const key = uid ? `habit-tracker-user-${uid}` : STORAGE_KEY;
-    const raw = window.localStorage.getItem(key);
+    const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState;
 
     const parsed = JSON.parse(raw) as AppState;
@@ -79,7 +78,6 @@ export function loadState(uid?: string): AppState {
         ...defaultState,
         habits: parsed?.habits ?? [],
         completions: [],
-        deviceId: parsed?.deviceId ?? localStorage.getItem('habit-tracker-device-id') ?? undefined,
       };
     }
 
@@ -89,22 +87,19 @@ export function loadState(uid?: string): AppState {
       completions: Array.isArray(parsed.completions)
         ? normalizeCompletions(parsed.completions)
         : [],
-      deviceSettings: parsed.deviceSettings ?? defaultState.deviceSettings,
-      deviceId: parsed.deviceId ?? localStorage.getItem('habit-tracker-device-id') ?? undefined,
+      notificationSettings: parsed.notificationSettings ?? defaultState.notificationSettings,
     };
   } catch {
     return defaultState;
   }
 }
 
-export function saveState(state: AppState, uid?: string): void {
+export function saveState(state: AppState): void {
   if (typeof window === 'undefined') return;
 
   try {
-    const key = uid ? `habit-tracker-user-${uid}` : STORAGE_KEY;
-    window.localStorage.setItem(key, JSON.stringify(state));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     // silent fail (quota vs.)
   }
 }
-

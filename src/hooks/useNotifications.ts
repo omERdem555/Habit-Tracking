@@ -46,48 +46,28 @@ export default function useNotifications({
 
     const getMissingToday = () => {
       const today = localDateString();
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      const yd = y.toISOString().slice(0, 10);
 
-      const doneTodaySet = new Set(
+      const doneSet = new Set(
         completions
           .filter((c) => c.date.slice(0, 10) === today)
           .map((c) => c.habitId),
       );
 
-      const doneYesterdaySet = new Set(
-        completions
-          .filter((c) => c.date.slice(0, 10) === yd)
-          .map((c) => c.habitId),
-      );
-
-      return habits.filter(
-        (h) => h.active && !doneTodaySet.has(h.id) && doneYesterdaySet.has(h.id),
-      );
+      return habits.filter((h) => h.active && !doneSet.has(h.id));
     };
 
     const getMissedYesterday = () => {
-      const today = localDateString();
       const y = new Date();
       y.setDate(y.getDate() - 1);
       const yd = y.toISOString().slice(0, 10);
 
-      const doneTodaySet = new Set(
-        completions
-          .filter((c) => c.date.slice(0, 10) === today)
-          .map((c) => c.habitId),
-      );
-
-      const doneYesterdaySet = new Set(
+      const doneSet = new Set(
         completions
           .filter((c) => c.date.slice(0, 10) === yd)
           .map((c) => c.habitId),
       );
 
-      return habits.filter(
-        (h) => h.active && !doneYesterdaySet.has(h.id) && !doneTodaySet.has(h.id),
-      );
+      return habits.filter((h) => h.active && !doneSet.has(h.id));
     };
 
     const tick = async () => {
@@ -98,9 +78,7 @@ export default function useNotifications({
       const meta = readMeta();
       const now = Date.now();
 
-      // 10-minute buffer to avoid interval skipping/drifting due to small tick delays
-      const buffer = 10 * 60 * 1000;
-      const interval = settings.intervalHours * 60 * 60 * 1000 - buffer;
+      const interval = settings.intervalHours * 60 * 60 * 1000;
       if (now - meta.lastNotified < interval) return;
 
       const missedYesterday = getMissedYesterday();
@@ -114,14 +92,10 @@ export default function useNotifications({
 
         for (const body of bodies) {
           const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
-          const isYesterday = body.includes('Dün') || body.includes('Yesterday');
-          const tag = isYesterday ? 'reminder-yesterday' : 'reminder-today';
-
           const payload = {
             body,
             icon: '/icon512.png',
             badge: '/icon192.png',
-            tag,
             data: {
               type: 'reminder',
             },
@@ -130,7 +104,7 @@ export default function useNotifications({
           if (reg?.showNotification) {
             reg.showNotification(title, payload);
           } else {
-            new Notification(title, { body, tag, icon: '/icon192.png' });
+            new Notification(title, { body });
           }
         }
 

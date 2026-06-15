@@ -36,19 +36,13 @@ type SkipReason =
   | 'no_pending_messages';
 
 function getLocalHour(timezone: string, now = new Date()): number {
-  try {
-    const hourStr = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour: 'numeric',
-      hour12: false,
-    }).format(now);
+  const hour = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    hour12: false,
+  }).format(now);
 
-    let hour = parseInt(hourStr, 10);
-    if (hour === 24) hour = 0;
-    return hour;
-  } catch (e) {
-    return now.getUTCHours();
-  }
+  return parseInt(hour, 10);
 }
 
 function getLocalDateString(timezone: string, now = new Date()): string {
@@ -90,9 +84,7 @@ function intervalElapsed(
         ? lastNotified.toMillis()
         : 0;
 
-  // 10-minute buffer to account for minor cron execution delays
-  const bufferMs = 10 * 60 * 1000;
-  const intervalMs = intervalHours * 60 * 60 * 1000 - bufferMs;
+  const intervalMs = intervalHours * 60 * 60 * 1000;
   return now.getTime() - lastMs >= intervalMs;
 }
 
@@ -103,21 +95,13 @@ function getMissingToday(
   now = new Date(),
 ): Habit[] {
   const today = getLocalDateString(timezone, now);
-  const yesterday = getYesterdayLocalDate(timezone, now);
-
-  const doneTodaySet = new Set(
+  const doneSet = new Set(
     completions
       .filter((c) => c.date.slice(0, 10) === today)
       .map((c) => c.habitId),
   );
 
-  const doneYesterdaySet = new Set(
-    completions
-      .filter((c) => c.date.slice(0, 10) === yesterday)
-      .map((c) => c.habitId),
-  );
-
-  return habits.filter((h) => h.active && !doneTodaySet.has(h.id) && doneYesterdaySet.has(h.id));
+  return habits.filter((h) => h.active && !doneSet.has(h.id));
 }
 
 function getMissedYesterday(
@@ -126,22 +110,14 @@ function getMissedYesterday(
   timezone: string,
   now = new Date(),
 ): Habit[] {
-  const today = getLocalDateString(timezone, now);
   const yesterday = getYesterdayLocalDate(timezone, now);
-
-  const doneTodaySet = new Set(
-    completions
-      .filter((c) => c.date.slice(0, 10) === today)
-      .map((c) => c.habitId),
-  );
-
-  const doneYesterdaySet = new Set(
+  const doneSet = new Set(
     completions
       .filter((c) => c.date.slice(0, 10) === yesterday)
       .map((c) => c.habitId),
   );
 
-  return habits.filter((h) => h.active && !doneYesterdaySet.has(h.id) && !doneTodaySet.has(h.id));
+  return habits.filter((h) => h.active && !doneSet.has(h.id));
 }
 
 function buildReminderMessages(
@@ -282,8 +258,6 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       };
     }> = [];
 
-    const seenTokens = new Set<string>();
-
     for (const deviceDoc of devicesSnap.docs) {
       const device = deviceDoc.data();
       const token = device.token as string | undefined;
@@ -303,13 +277,6 @@ export default async (req: VercelRequest, res: VercelResponse) => {
         continue;
       }
 
-      if (seenTokens.has(token)) {
-        summary.skipped += 1;
-        logSkip(deviceDoc.id, 'duplicate_token' as any, { tokenPreview: token.slice(0, 12) });
-        continue;
-      }
-      seenTokens.add(token);
-
       const userState = await loadUserState(db, userId);
       if (!userState) {
         summary.skipped += 1;
@@ -322,6 +289,7 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       const settings: NotificationSettings =
         userState.notificationSettings ??
+        device.notificationSettings ??
         { enabled: false, intervalHours: 2, startHour: 9, endHour: 21 };
 
       if (!settings.enabled) {
@@ -390,21 +358,12 @@ export default async (req: VercelRequest, res: VercelResponse) => {
 
       for (const body of bodies) {
         const title = language === 'tr' ? 'Hatırlatma' : 'Reminder';
-        const isYesterday = body.includes('Dün') || body.includes('Yesterday');
-        const tag = isYesterday ? 'reminder-yesterday' : 'reminder-today';
-
         queuedMessages.push({
           message: {
             token,
             notification: { title, body },
             webpush: {
               fcmOptions: { link: '/' },
-              notification: {
-                tag,
-                renotify: true,
-                icon: '/icon192.png',
-                badge: '/icon192.png',
-              },
             },
           },
           ref: deviceDoc.ref,

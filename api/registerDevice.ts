@@ -65,18 +65,11 @@ export default async (req: VercelRequest, res: VercelResponse) => {
       language: language || null,
       timezone: timezone || null,
       platform: platform || 'web',
-      notificationSettings: admin.firestore.FieldValue.delete(),
+      notificationSettings: notificationSettings || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
-  // After writing device info, fetch user notification settings for synchronization
-  const userDocRef = db.collection('users').doc(userId);
-  const userSnap = await userDocRef.get();
-  const userData = userSnap.exists ? userSnap.data() : {};
-  const notificationSettings = userData?.notificationSettings || null;
-
-  // Respond with success and the fetched settings
-  return res.status(200).json({ ok: true, notificationSettings });
+    return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('registerDevice failed', e);
     return res.status(500).json({ error: 'server_error' });
